@@ -2,8 +2,10 @@ import { CSSProperties, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import * as LucideIcons from 'lucide-react';
 import { useResume } from '../hooks/useResume';
-import { ListItem, TagItem } from '../types';
+import { ListItem, TagItem, ResumeData } from '../types';
 import { Link, useSearchParams } from 'react-router-dom';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 const ICONS: Record<string, any> = {
   info: LucideIcons.User,
@@ -14,11 +16,60 @@ const ICONS: Record<string, any> = {
 };
 
 export default function ViewPage() {
-  const { data } = useResume();
+  const { data: defaultData } = useResume();
+  const [searchParams] = useSearchParams();
+  const [remoteData, setRemoteData] = useState<ResumeData | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  
+  const idFromUrl = searchParams.get('id');
+  const liveIdFromUrl = searchParams.get('live');
+  const isPrint = searchParams.get('print') === 'true';
+  const isShared = !!idFromUrl || !!liveIdFromUrl;
+
+  useEffect(() => {
+    if (idFromUrl || liveIdFromUrl) {
+      const fetchData = async () => {
+        setLoading(true);
+        try {
+          const docRef = doc(db, idFromUrl ? 'sharedResumes' : 'liveResumes', idFromUrl || liveIdFromUrl!);
+          const docSnap = await getDoc(docRef);
+          if (docSnap.exists()) {
+            setRemoteData(docSnap.data() as ResumeData);
+          } else {
+            setError('Resume not found.');
+          }
+        } catch (err) {
+          console.error(err);
+          setError('Failed to load resume.');
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchData();
+    }
+  }, [idFromUrl, liveIdFromUrl]);
+
+  const [syncData, setSyncData] = useState<ResumeData | null>(null);
+  const data = syncData || remoteData || defaultData;
+
+  // Real-time data sync for printing/previewing latest unsaved local data
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'RESUME_DATA_SYNC') {
+        setSyncData(event.data.data);
+        // Acknowledge receipt to stop the sender's interval
+        if (window.opener) {
+          window.opener.postMessage({ type: 'RESUME_DATA_ACK' }, event.origin);
+        }
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
   const [activeTab, setActiveTab] = useState('info');
   const [direction, setDirection] = useState(0);
-  const [searchParams] = useSearchParams();
-  const isShared = searchParams.get('shared') === 'true';
   const tabsContainerRef = useRef<HTMLDivElement>(null);
 
   const allTabs = ['info', ...data.blockOrder];
@@ -61,6 +112,168 @@ export default function ViewPage() {
   };
 
   const activeBlock = data.blocks[activeTab];
+
+  const [imagesLoaded, setImagesLoaded] = useState(!data?.profile?.photo);
+
+  useEffect(() => {
+    if (isPrint && !loading && !error && data) {
+      if (!data.profile.photo) {
+        setImagesLoaded(true);
+      }
+      if (imagesLoaded) {
+        const timer = setTimeout(() => window.print(), 800);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [isPrint, loading, error, imagesLoaded, data]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] text-white overflow-hidden">
+         <div className="depth-bg animated" />
+         <div className="flex flex-col items-center gap-4 relative z-10">
+           <span className="w-12 h-12 rounded-full border-4 border-white/10 border-t-white animate-spin mb-4" />
+           <p className="text-xl tracking-widest uppercase font-light text-text-secondary">Loading Profile...</p>
+         </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] text-white overflow-hidden">
+         <div className="depth-bg animated" />
+         <div className="flex flex-col items-center gap-4 relative z-10 text-center max-w-md px-6">
+           <LucideIcons.AlertTriangle className="w-16 h-16 text-red-500 mb-2" />
+           <p className="text-xl tracking-widest uppercase font-light text-white mb-2">Error</p>
+           <p className="text-text-secondary">{error}</p>
+           <Link to="/edit" className="mt-8 px-8 py-3 rounded-full border border-white/10 text-white hover:bg-white/10 transition-colors uppercase tracking-widest text-sm">
+             Go to Editor
+           </Link>
+         </div>
+      </div>
+    );
+  }
+
+  if (isPrint && data) {
+    return (
+      <div className="bg-white min-h-screen text-black print:p-0 p-8 max-w-[1000px] mx-auto font-sans" style={{ '--theme-accent': data.themeColor } as CSSProperties}>
+        <div className="print-page w-full flex flex-col mb-16">
+          {/* For print layout, we enforce flex-row universally to prevent stacking on narrow print viewports */}
+          <div className={`flex flex-row w-full gap-8 ${
+            data.profile.photo ? (data.profile.photoPosition === 'right' ? 'flex-row-reverse' : '') : ''
+          }`}>
+            {data.profile.photo && (
+              <div className="w-48 h-48 rounded-full overflow-hidden shrink-0 border-4" style={{ borderColor: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>
+                <img 
+                  src={data.profile.photo} 
+                  alt="Profile" 
+                  className="w-full h-full object-cover" 
+                  onLoad={() => setImagesLoaded(true)}
+                  onError={() => setImagesLoaded(true)} // Proceed even if image fails
+                />
+              </div>
+            )}
+            <div className={`flex flex-col justify-center w-full ${
+              data.profile.photo 
+                ? (data.profile.photoPosition === 'right' ? 'text-right items-end' : 'text-left items-start')
+                : 'text-center items-center'
+            }`}>
+              {/* Darken the text for white backgrounds so even white/light-grey theme colors remain legible */}
+              <h1 className="font-serif text-6xl font-bold mb-4" style={{ color: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>{data.profile.name}</h1>
+              <p className="text-xl tracking-widest uppercase text-gray-500 font-['Georgia'] mb-6">{data.profile.title}</p>
+              
+              <div className={`flex flex-wrap items-center gap-6 text-gray-600 ${
+                data.profile.photo 
+                  ? data.profile.photoPosition === 'right' ? 'justify-end' : 'justify-start'
+                  : 'justify-center'
+              }`}>
+                {data.profile.contactItems?.map((item: any) => {
+                  const Icon = (LucideIcons as any)[item.icon] || LucideIcons.Link;
+                  return (
+                    <div key={item.id} className="flex items-center gap-2">
+                      <Icon className="w-4 h-4" style={{ color: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }} />
+                      <span className="text-sm font-['Georgia']">{item.text}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+          
+          {data.profile.summary && (
+            <div className="mt-12 w-full text-lg leading-relaxed text-gray-700 italic font-['Georgia']">
+              "{data.profile.summary}"
+            </div>
+          )}
+        </div>
+
+        {data.blockOrder.map(blockId => {
+          const block = data.blocks[blockId];
+          if (!block) return null;
+          return (
+            <div key={block.id} className="print-page w-full mb-16">
+              <h2 className="text-2xl font-serif mb-8 border-b-2 pb-2 uppercase tracking-wider" style={{ borderColor: 'color-mix(in srgb, var(--theme-accent) 60%, black)', color: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>
+                {block.title}
+              </h2>
+              
+              {block.type === 'list' && (
+                <div className="space-y-8">
+                  {block.items.map((item: ListItem) => (
+                    <div key={item.id} className="flex flex-col gap-1">
+                      <div className="flex justify-between items-baseline form-row">
+                        <h3 className="font-serif text-xl font-bold text-gray-900">{item.title}</h3>
+                        <span className="text-sm tracking-widest uppercase text-gray-500">{item.period}</span>
+                      </div>
+                      <div className="text-sm tracking-widest uppercase text-gray-500 mb-2">
+                        {item.subtitle}
+                      </div>
+                      <p className="text-gray-700 leading-relaxed whitespace-pre-wrap text-sm">
+                        {item.description}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {block.type === 'tags' && (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                  {block.items.map((item: TagItem) => {
+                    const idx = item.text.indexOf(':');
+                    let category = item.text;
+                    let tags: string[] = [];
+                    if (idx > -1) {
+                      category = item.text.slice(0, idx).trim();
+                      tags = item.text.slice(idx + 1).split(',').map(s => s.trim()).filter(Boolean);
+                    } else if (item.text.includes(',')) {
+                      category = 'Skills';
+                      tags = item.text.split(',').map(s => s.trim()).filter(Boolean);
+                    } else {
+                      tags = [item.text];
+                      category = 'Expertise';
+                    }
+
+                    return (
+                      <div key={item.id} className="p-4 border rounded-xl bg-gray-50" style={{ borderColor: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>
+                        <h4 className="text-sm font-bold tracking-widest uppercase mb-3 text-gray-900">{category}</h4>
+                        <div className="flex flex-wrap gap-2">
+                          {tags.map((t, i) => (
+                            <span key={i} className="px-3 py-1 bg-white border rounded-lg text-xs text-gray-600 block uppercase tracking-wide">
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   return (
     <div 
@@ -130,32 +343,68 @@ export default function ViewPage() {
               animate="center"
               exit="exit"
               transition={{ duration: 0.3 }}
-              className="flex flex-col items-center text-center space-y-12 py-12"
+              className="flex flex-col items-center py-12"
             >
-              <div>
-                <h1 className="font-serif text-6xl md:text-8xl font-light leading-none text-accent mb-6 hover-glow cursor-default">{data.profile.name}</h1>
-                <p className="text-lg md:text-xl tracking-[0.4em] uppercase text-text-secondary hover-glow-text cursor-default font-['Georgia']">{data.profile.title}</p>
+              <div className={`flex flex-col md:flex-row w-full mb-16 gap-12 lg:gap-24 ${
+                data.profile.photo 
+                  ? data.profile.photoPosition === 'right' 
+                    ? 'md:flex-row-reverse justify-center md:items-start' 
+                    : 'justify-center md:items-start'
+                  : 'justify-center items-center text-center'
+              }`}>
+                {/* Avatar Frame */}
+                {data.profile.photo && (
+                  <div className={`shrink-0 flex items-center justify-center pt-2 ${
+                    data.profile.photoPosition === 'right' ? 'md:justify-start' : 'md:justify-end'
+                  }`}>
+                     <div className="w-48 h-48 md:w-64 md:h-64 rounded-[2rem] overflow-hidden glass p-2 border border-accent/20 rotate-3 hover:rotate-0 transition-transform duration-500 shadow-xl">
+                       <img src={data.profile.photo} alt="Profile" className="w-full h-full object-cover rounded-[1.5rem]" />
+                     </div>
+                  </div>
+                )}
+
+                {/* Header Texts & Contacts */}
+                <div className={`flex flex-col space-y-10 ${
+                  data.profile.photo 
+                    ? data.profile.photoPosition === 'right'
+                      ? 'items-center text-center md:items-end md:text-right'
+                      : 'items-center text-center md:items-start md:text-left'
+                    : 'items-center text-center'
+                }`}>
+                  <div>
+                    <h1 className="font-serif text-6xl md:text-8xl font-light leading-none text-accent mb-6 hover-glow cursor-default">{data.profile.name}</h1>
+                    <p className="text-lg md:text-xl tracking-[0.4em] uppercase text-text-secondary hover-glow-text cursor-default font-['Georgia']">{data.profile.title}</p>
+                  </div>
+
+                  <div className={`flex flex-wrap items-center gap-6 md:gap-8 text-text-secondary ${
+                    data.profile.photo 
+                      ? data.profile.photoPosition === 'right'
+                        ? 'justify-center md:justify-end'
+                        : 'justify-center md:justify-start'
+                      : 'justify-center'
+                  }`}>
+                    {data.profile.contactItems?.map(item => {
+                      const Icon = (LucideIcons as any)[item.icon] || LucideIcons.Link;
+                      return (
+                        <div key={item.id} className={`flex items-center gap-3 hover-glow-text cursor-default ${
+                          data.profile.photo && data.profile.photoPosition === 'right' ? 'flex-row-reverse md:flex-row' : ''
+                        }`}>
+                          <Icon className="w-5 h-5 text-accent" />
+                          {item.url ? (
+                            <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-lg hover:text-accent transition-colors font-['Georgia'] font-bold">
+                              {item.text}
+                            </a>
+                          ) : (
+                            <span className="text-lg font-['Georgia']">{item.text}</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-8 text-text-secondary">
-                {data.profile.contactItems?.map(item => {
-                  const Icon = (LucideIcons as any)[item.icon] || LucideIcons.Link;
-                  return (
-                    <div key={item.id} className="flex items-center gap-3 hover-glow-text cursor-default">
-                      <Icon className="w-5 h-5 text-accent" />
-                      {item.url ? (
-                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-lg hover:text-accent transition-colors font-['Georgia'] font-bold">
-                          {item.text}
-                        </a>
-                      ) : (
-                        <span className="text-lg font-['Georgia']">{item.text}</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="max-w-[900px] w-full px-4 flex justify-center">
+              <div className="max-w-[900px] w-full px-4 flex justify-center pb-12">
                 <div style={{ width: `${data.profile.summaryWidth || 100}%` }} className="relative">
                   <span className="absolute -left-8 top-0 text-3xl font-serif italic text-text-secondary">"</span>
                   <div 
@@ -202,15 +451,46 @@ export default function ViewPage() {
               )}
 
               {activeBlock.type === 'tags' && (
-                <div className="flex flex-wrap gap-3">
-                  {activeBlock.items.map((item: TagItem) => (
-                    <div 
-                      key={item.id} 
-                      className="glass px-6 py-3 rounded-full flex items-center gap-2 border-accent/20 hover-glow cursor-default"
-                    >
-                      <span className="text-sm tracking-widest uppercase text-accent/90">{item.text}</span>
-                    </div>
-                  ))}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6 w-[100vw] max-w-[1400px] relative left-1/2 -translate-x-1/2 px-6 md:px-12">
+                  {activeBlock.items.map((item: TagItem) => {
+                    const idx = item.text.indexOf(':');
+                    let category = item.text;
+                    let tags: string[] = [];
+                    
+                    if (idx > -1) {
+                      category = item.text.slice(0, idx).trim();
+                      tags = item.text.slice(idx + 1).split(',').map(s => s.trim()).filter(Boolean);
+                    } else if (item.text.includes(',')) {
+                      category = 'Skills';
+                      tags = item.text.split(',').map(s => s.trim()).filter(Boolean);
+                    } else {
+                      tags = [item.text];
+                      category = 'Expertise';
+                    }
+
+                    return (
+                      <div 
+                        key={item.id} 
+                        className="glass p-6 md:p-8 rounded-3xl flex flex-col gap-6 border-accent/10 hover-glow cursor-default transition-all duration-300 xl:min-h-[350px] min-h-[150px] shadow-lg hover:-translate-y-1 content-start"
+                      >
+                        <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+                           <div className="w-1.5 h-1.5 rounded-full bg-accent hover-glow" />
+                           <h4 className="text-sm xl:text-base tracking-widest uppercase text-white font-medium">{category}</h4>
+                        </div>
+                        <div className="flex flex-wrap xl:flex-col gap-2 xl:gap-4 mt-2">
+                          {tags.map((t, i) => (
+                            <span 
+                              key={i} 
+                              className="px-4 py-2 xl:px-0 xl:py-1 xl:bg-transparent bg-white/5 rounded-lg xl:rounded-none text-xs xl:text-sm text-text-secondary xl:border-none border border-white/5 hover:text-accent hover:bg-white/10 xl:hover:bg-transparent xl:hover:translate-x-2 transition-all uppercase tracking-wide flex items-center w-auto xl:w-full"
+                            >
+                              <span className="hidden xl:inline-block w-1 h-1 bg-white/20 rounded-full mr-3.5 flex-shrink-0" />
+                              {t}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </motion.div>

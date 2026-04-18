@@ -89,3 +89,22 @@
     scrollbar-width: none;
   }
 }
+
+@media print {
+  @page {
+    margin: 0;
+    size: A4 portrait;
+  }
+  body, html {
+    margin: 0;
+    padding: 0;
+    background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Ensure backgrounds render gracefully when exported */
+  .print-page {
+    page-break-after: auto;
+    page-break-inside: auto;
+  }
+}

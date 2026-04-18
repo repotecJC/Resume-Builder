@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Global Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /sharedResumes/{resumeId} {
+      // Anyone can generate a share link (create a document)
+      allow create: if true;
+      // Anyone with the link (id) can read it
+      allow get: if true;
+      // Listing all resumes is forbidden (no scraping)
+      allow list: if false;
+      // Updating or Deleting share links is forbidden
+      allow update, delete: if false;
+    }
+
+    match /liveResumes/{resumeId} {
+      // Anyone can generate a live resume link
+      allow create: if true;
+      // Anyone with the live link can view it
+      allow get: if true;
+      allow list: if false;
+      // Updates require the creator's anonymous token to match
+      allow update: if request.resource.data.updateToken == resource.data.updateToken;
+      allow delete: if false;
+    }
+  }
+}

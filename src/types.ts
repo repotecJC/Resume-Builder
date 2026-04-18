@@ -14,6 +14,8 @@ export interface Profile {
   contactItems?: ContactItem[];
   summaryAlign?: 'left' | 'center' | 'right' | 'justify';
   summaryWidth?: number;
+  photo?: string;
+  photoPosition?: 'left' | 'right';
 }
 
 export interface ListItem {
@@ -42,4 +44,6 @@ export interface ResumeData {
   profile: Profile;
   blockOrder: string[];
   blocks: Record<string, Block>;
+  liveId?: string;
+  updateToken?: string;
 }

@@ -2,36 +2,139 @@ import { useState, useEffect } from 'react';
 import { ResumeData } from '../types';
 import { DEFAULT_RESUME } from '../data/defaultResume';
 
-const STORAGE_KEY = 'elegant_resume_data';
+const APP_STORAGE_KEY = 'elegant_resume_app_data';
+const OLD_STORAGE_KEY = 'elegant_resume_data';
+
+export interface ProfileMeta {
+  id: string;
+  name: string;
+  data: ResumeData;
+}
+
+export interface AppState {
+  activeProfileId: string;
+  profiles: Record<string, ProfileMeta>;
+}
 
 export function useResume() {
-  const [data, setData] = useState<ResumeData>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
+  const [appState, setAppState] = useState<AppState>(() => {
+    const savedApp = localStorage.getItem(APP_STORAGE_KEY);
+    if (savedApp) {
       try {
-        const parsed = JSON.parse(saved);
-        // Migration: add contactItems if missing
-        if (!parsed.profile.contactItems) {
-          parsed.profile.contactItems = [
-            { id: "c1", icon: "MapPin", text: parsed.profile.location || "", url: "" },
-            { id: "c2", icon: "Mail", text: parsed.profile.email || "", url: parsed.profile.email ? `mailto:${parsed.profile.email}` : "" }
-          ];
+        const parsed = JSON.parse(savedApp);
+        if (parsed.activeProfileId && parsed.profiles) {
+          // Migration check for missing contactItems or enableAnimation
+          Object.keys(parsed.profiles).forEach(key => {
+            const profileData = parsed.profiles[key].data;
+            if (!profileData.profile.contactItems) {
+              profileData.profile.contactItems = [
+                { id: "c1", icon: "MapPin", text: profileData.profile.location || "", url: "" },
+                { id: "c2", icon: "Mail", text: profileData.profile.email || "", url: profileData.profile.email ? `mailto:${profileData.profile.email}` : "" }
+              ];
+            }
+            if (profileData.enableAnimation === undefined) {
+              profileData.enableAnimation = true;
+            }
+          });
+          return parsed;
         }
-        // Migration: add enableAnimation if missing
-        if (parsed.enableAnimation === undefined) {
-          parsed.enableAnimation = true;
-        }
-        return parsed;
       } catch (e) {
-        console.error('Failed to parse resume data', e);
+        console.error('Failed to parse app data', e);
       }
     }
-    return DEFAULT_RESUME;
+
+    // Fallback to old storage migration or default
+    const savedOld = localStorage.getItem(OLD_STORAGE_KEY);
+    let initialData = DEFAULT_RESUME;
+    if (savedOld) {
+      try {
+        const parsedOld = JSON.parse(savedOld);
+        if (!parsedOld.profile.contactItems) {
+          parsedOld.profile.contactItems = [
+            { id: "c1", icon: "MapPin", text: parsedOld.profile.location || "", url: "" },
+            { id: "c2", icon: "Mail", text: parsedOld.profile.email || "", url: parsedOld.profile.email ? `mailto:${parsedOld.profile.email}` : "" }
+          ];
+        }
+        if (parsedOld.enableAnimation === undefined) parsedOld.enableAnimation = true;
+        initialData = parsedOld;
+      } catch (e) {}
+    }
+    
+    return {
+      activeProfileId: 'main',
+      profiles: {
+        'main': { id: 'main', name: 'Main profile', data: initialData }
+      }
+    };
   });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  }, [data]);
+    localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(appState));
+  }, [appState]);
+
+  const data = appState.profiles[appState.activeProfileId]?.data || DEFAULT_RESUME;
+
+  const updateProfileData = (updater: (prev: ResumeData) => ResumeData) => {
+    setAppState(prev => {
+      const activeData = prev.profiles[prev.activeProfileId].data;
+      return {
+        ...prev,
+        profiles: {
+          ...prev.profiles,
+          [prev.activeProfileId]: {
+            ...prev.profiles[prev.activeProfileId],
+            data: updater(activeData)
+          }
+        }
+      };
+    });
+  };
+
+  const setData = updateProfileData;
+
+  const switchProfile = (id: string) => {
+    if (appState.profiles[id]) {
+      setAppState(prev => ({ ...prev, activeProfileId: id }));
+    }
+  };
+
+  const createProfile = (name: string) => {
+    const mainData = appState.profiles['main'].data;
+    const newId = `profile-${Date.now()}`;
+    // Deep clone main data
+    const newData = JSON.parse(JSON.stringify(mainData));
+    
+    setAppState(prev => ({
+      activeProfileId: newId,
+      profiles: {
+        ...prev.profiles,
+        [newId]: { id: newId, name, data: newData }
+      }
+    }));
+  };
+
+  const renameProfile = (id: string, newName: string) => {
+    setAppState(prev => ({
+      ...prev,
+      profiles: {
+        ...prev.profiles,
+        [id]: { ...prev.profiles[id], name: newName }
+      }
+    }));
+  };
+
+  const deleteProfile = (id: string) => {
+    if (id === 'main') return; // Cannot delete main
+    setAppState(prev => {
+      const newProfiles = { ...prev.profiles };
+      delete newProfiles[id];
+      const newActiveId = prev.activeProfileId === id ? 'main' : prev.activeProfileId;
+      return {
+        activeProfileId: newActiveId,
+        profiles: newProfiles
+      };
+    });
+  };
 
   const toggleAnimation = () => {
     setData(prev => ({ ...prev, enableAnimation: !prev.enableAnimation }));
@@ -262,6 +365,11 @@ export function useResume() {
   };
 
   return {
+    appState,
+    switchProfile,
+    createProfile,
+    renameProfile,
+    deleteProfile,
     data,
     updateProfile,
     updateThemeColor,
@@ -280,6 +388,7 @@ export function useResume() {
     removeBlock,
     addContactItem,
     updateContactItem,
-    removeContactItem
+    removeContactItem,
+    updateProfileData
   };
 }

@@ -1,10 +1,58 @@
-import { useState, KeyboardEvent, CSSProperties, useEffect, useRef } from 'react';
+import { useState, KeyboardEvent, CSSProperties, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import * as LucideIcons from 'lucide-react';
+import Cropper from 'react-easy-crop';
 import { useResume } from '../hooks/useResume';
 import { ListItem, TagItem } from '../types';
 import { Link } from 'react-router-dom';
+
+const createImage = (url: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener('load', () => resolve(image));
+    image.addEventListener('error', (error) => reject(error));
+    image.src = url;
+  });
+
+async function getCroppedImg(
+  imageSrc: string,
+  pixelCrop: { x: number; y: number; width: number; height: number }
+) {
+  const image = await createImage(imageSrc);
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+
+  if (!ctx) return null;
+
+  canvas.width = pixelCrop.width;
+  canvas.height = pixelCrop.height;
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  );
+
+  const MAX = 600;
+  if (pixelCrop.width > MAX || pixelCrop.height > MAX) {
+    const scaledCanvas = document.createElement('canvas');
+    const maxRatio = Math.max(pixelCrop.width / MAX, pixelCrop.height / MAX);
+    scaledCanvas.width = pixelCrop.width / maxRatio;
+    scaledCanvas.height = pixelCrop.height / maxRatio;
+    const sCtx = scaledCanvas.getContext('2d');
+    sCtx?.drawImage(canvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
+    return scaledCanvas.toDataURL('image/jpeg', 0.85);
+  }
+
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
 
 const ICONS: Record<string, any> = {
   info: LucideIcons.User,
@@ -27,6 +75,11 @@ const AVAILABLE_ICONS = ['MapPin', 'Mail', 'Phone', 'Link', 'Github', 'Linkedin'
 
 export default function EditPage() {
   const { 
+    appState,
+    switchProfile,
+    createProfile,
+    renameProfile,
+    deleteProfile,
     data, 
     updateProfile, 
     updateThemeColor, 
@@ -45,7 +98,8 @@ export default function EditPage() {
     removeBlock,
     addContactItem,
     updateContactItem,
-    removeContactItem
+    removeContactItem,
+    updateProfileData
   } = useResume();
 
   const [activeTab, setActiveTab] = useState('info');
@@ -53,9 +107,20 @@ export default function EditPage() {
   const [newTags, setNewTags] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
   const [blockToDelete, setBlockToDelete] = useState<string | null>(null);
+  const [profileToDelete, setProfileToDelete] = useState<string | null>(null);
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const tabsContainerRef = useRef<HTMLDivElement>(null);
 
   const allTabs = ['info', ...data.blockOrder];
+
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   useEffect(() => {
     if (tabsContainerRef.current) {
@@ -99,11 +164,125 @@ export default function EditPage() {
     }
   };
 
-  const handleCopyLink = () => {
-    const url = `${window.location.origin}/view?shared=true`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const [isSharing, setIsSharing] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+
+  const handleExportPDF = () => {
+    const printWindow = window.open('/view?print=true', '_blank');
+    if (printWindow) {
+      // We wait for the window to load and then send the data
+      // This solves the 'old data' problem because we send the CURRENT state
+      const checkLoad = setInterval(() => {
+        if (printWindow.closed) {
+          clearInterval(checkLoad);
+          return;
+        }
+        printWindow.postMessage({ type: 'RESUME_DATA_SYNC', data }, window.location.origin);
+      }, 500);
+
+      // Stop checking after 10 seconds
+      setTimeout(() => clearInterval(checkLoad), 10000);
+      
+      // Also register a listener to stop when the child acknowledges
+      const handleAck = (event: MessageEvent) => {
+        if (event.data?.type === 'RESUME_DATA_ACK') {
+          clearInterval(checkLoad);
+          window.removeEventListener('message', handleAck);
+        }
+      };
+      window.addEventListener('message', handleAck);
+    }
+  };
+
+  // Auto-sync for Live Resumes
+  useEffect(() => {
+    if (data.liveId && data.updateToken) {
+      const timeoutId = setTimeout(async () => {
+        try {
+          const { doc, setDoc } = await import('firebase/firestore');
+          const { db } = await import('../lib/firebase');
+          const safeData = JSON.parse(JSON.stringify(data));
+          
+          await setDoc(doc(db, 'liveResumes', data.liveId as string), {
+            ...safeData,
+            updatedAt: Date.now()
+          }, { merge: false });
+        } catch (err) {
+          console.error("Auto-sync failed:", err);
+        }
+      }, 2000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [data]);
+
+  const generateShareLink = async (mode: 'snapshot' | 'live') => {
+    setIsSharing(true);
+    try {
+      const profileData = appState.profiles[appState.activeProfileId]?.data || data;
+      const safeData = JSON.parse(JSON.stringify(profileData));
+      
+      const { collection, addDoc, doc, setDoc } = await import('firebase/firestore');
+      const { db } = await import('../lib/firebase');
+      const { handleFirestoreError } = await import('../lib/errorHandling');
+
+      if (mode === 'snapshot') {
+        let docRef;
+        try {
+          docRef = await addDoc(collection(db, 'sharedResumes'), {
+            ...safeData,
+            createdAt: Date.now()
+          });
+        } catch (err: any) {
+          handleFirestoreError(err, 'create', 'sharedResumes');
+        }
+
+        if (docRef) {
+          const url = `${window.location.origin}/view?id=${docRef.id}`;
+          navigator.clipboard.writeText(url);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        }
+      } else if (mode === 'live') {
+        if (profileData.liveId) {
+          // Already have a live link, just copy it and trigger a sync to make sure it's up to date
+          const url = `${window.location.origin}/view?live=${profileData.liveId}`;
+          navigator.clipboard.writeText(url);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2000);
+        } else {
+          // Create new live link
+          const updateToken = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36);
+          let docRef;
+          try {
+            docRef = await addDoc(collection(db, 'liveResumes'), {
+              ...safeData,
+              updateToken,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            });
+            // Update local state with the liveId and token
+            updateProfileData(prev => ({
+              ...prev,
+              liveId: docRef.id,
+              updateToken
+            }));
+            
+            const url = `${window.location.origin}/view?live=${docRef.id}`;
+            navigator.clipboard.writeText(url);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+          } catch (err: any) {
+            handleFirestoreError(err, 'create', 'liveResumes');
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to share resume:', error);
+      alert('Failed to generate share link.');
+    } finally {
+      setIsSharing(false);
+      setIsShareModalOpen(false);
+    }
   };
 
   const variants = {
@@ -121,6 +300,44 @@ export default function EditPage() {
     })
   };
 
+  const handleImageUpload = (file: File) => {
+    if (!file.type.match(/^image\/(jpeg|jpg|png|heif|heic)$/i) && !file.name.match(/\.(jpg|jpeg|png|heif|heic)$/i)) {
+      alert("Only JPG, PNG, and HEIF formats are supported.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setCropImageSrc(e.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const [isPhotoDragging, setIsPhotoDragging] = useState(false);
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+
+  const onCropComplete = useCallback((croppedArea: any, croppedAreaPixels: any) => {
+    setCroppedAreaPixels(croppedAreaPixels);
+  }, []);
+
+  const handleCropSave = async () => {
+    if (!cropImageSrc || !croppedAreaPixels) return;
+    try {
+      const croppedImage = await getCroppedImg(cropImageSrc, croppedAreaPixels);
+      if (croppedImage) {
+        updateProfile('photo', croppedImage);
+        if (!data.profile.photoPosition) {
+          updateProfile('photoPosition', 'left');
+        }
+      }
+      setCropImageSrc(null);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const activeBlock = data.blocks[activeTab];
 
   return (
@@ -130,6 +347,57 @@ export default function EditPage() {
         style={{ '--theme-accent': data.themeColor } as CSSProperties}
       >
         <div className={`depth-bg ${data.enableAnimation ? 'animated' : ''}`} />
+
+        {isShareModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="glass p-8 rounded-2xl max-w-lg w-full flex flex-col items-center text-center border border-white/10 shadow-2xl relative">
+              <button 
+                onClick={() => setIsShareModalOpen(false)}
+                className="absolute top-4 right-4 text-text-secondary hover:text-white transition-colors p-2"
+              >
+                <LucideIcons.X className="w-5 h-5" />
+              </button>
+              <LucideIcons.Share2 className="w-10 h-10 text-accent mb-4" />
+              <h3 className="text-2xl font-serif text-white mb-2">Share Your Resume</h3>
+              <p className="text-sm text-text-secondary mb-8">
+                Choose how you want to share your profile with the world.
+              </p>
+              
+              <div className="flex flex-col gap-4 w-full">
+                {/* Snapshot Link */}
+                <button
+                  onClick={() => generateShareLink('snapshot')}
+                  disabled={isSharing}
+                  className="flex flex-col text-left w-full p-4 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50"
+                >
+                  <div className="flex items-center gap-2 text-white font-medium mb-1">
+                    <LucideIcons.Camera className="w-4 h-4 text-accent" />
+                    Snapshot Link
+                  </div>
+                  <p className="text-xs text-text-secondary">
+                    Captures your resume exactly as it is right now. Good for submitting to a specific job.
+                  </p>
+                </button>
+
+                {/* Live Link */}
+                <button
+                  onClick={() => generateShareLink('live')}
+                  disabled={isSharing}
+                  className="flex flex-col text-left w-full p-4 rounded-xl border border-accent/20 bg-accent/5 hover:bg-accent/10 transition-colors disabled:opacity-50 relative overflow-hidden"
+                >
+                  <div className="flex items-center gap-2 text-white font-medium mb-1">
+                    <LucideIcons.Radio className="w-4 h-4 text-accent" />
+                    Live Link
+                  </div>
+                  <p className="text-xs text-text-secondary">
+                    Generates a permanent link. Any edits you make here will automatically reflect on the live link.
+                  </p>
+                  {isSharing && <div className="absolute inset-0 bg-black/20 flex items-center justify-center"><LucideIcons.Loader2 className="w-6 h-6 text-accent animate-spin" /></div>}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {blockToDelete && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
@@ -161,8 +429,147 @@ export default function EditPage() {
           </div>
         )}
 
+        {cropImageSrc && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+            <div className="glass p-6 md:p-8 rounded-3xl w-full max-w-2xl flex flex-col items-center border border-white/10 shadow-2xl relative">
+              <h3 className="text-xl font-medium text-white mb-6">Position Photo</h3>
+              
+              <div className="relative w-full h-[60vh] max-h-[500px] bg-black/20 rounded-2xl overflow-hidden mb-6">
+                <Cropper
+                  image={cropImageSrc}
+                  crop={crop}
+                  zoom={zoom}
+                  aspect={1}
+                  cropShape="rect"
+                  showGrid={false}
+                  onCropChange={setCrop}
+                  onCropComplete={onCropComplete}
+                  onZoomChange={setZoom}
+                  classes={{ containerClassName: 'rounded-2xl' }}
+                />
+              </div>
+
+              <div className="w-full flex items-center gap-4 mb-8">
+                <span className="text-sm text-center text-text-secondary w-full select-none">
+                  Drag to move • Scroll to zoom
+                </span>
+              </div>
+
+              <div className="flex gap-4 w-full relative z-50">
+                <button
+                  onClick={() => { setCropImageSrc(null); setZoom(1); }}
+                  className="flex-1 py-3.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition-colors text-white font-medium tracking-wide"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleCropSave}
+                  className="flex-[2] py-3.5 rounded-xl bg-accent text-bg hover:opacity-90 font-medium tracking-wide shadow-[0_0_20px_var(--theme-accent)] transition-all"
+                >
+                  Apply Crop
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {profileToDelete && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="glass p-8 rounded-2xl max-w-md w-full flex flex-col items-center text-center border border-white/10 shadow-2xl">
+              <LucideIcons.FileWarning className="w-12 h-12 text-red-400 mb-4" />
+              <h3 className="text-xl font-medium text-white mb-2">Delete Resume?</h3>
+              <p className="text-text-secondary mb-8">
+                Are you sure you want to delete "{appState.profiles[profileToDelete]?.name}"? This action cannot be undone.
+              </p>
+              <div className="flex gap-4 w-full">
+                <button
+                  onClick={() => setProfileToDelete(null)}
+                  className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-white font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    deleteProfile(profileToDelete);
+                    setProfileToDelete(null);
+                  }}
+                  className="flex-1 py-3 rounded-xl bg-red-500/80 hover:bg-red-500 transition-colors text-white font-medium"
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Top Bar - Separated into rows */}
         <div className="max-w-5xl mx-auto w-full flex flex-col gap-8 mb-16 relative z-10">
+          
+          {/* Row 0: Profiles */}
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}
+            className="flex items-center justify-between gap-4 p-2 w-full border-b border-white/5 pb-6"
+          >
+            <div className="flex items-center gap-2 overflow-x-auto glass-scrollbar pb-2 pt-1 flex-1">
+              {Object.values(appState.profiles).map((profile: any) => (
+                <div key={profile.id} className="relative group flex items-center shrink-0">
+                  <div
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all cursor-pointer ${
+                      appState.activeProfileId === profile.id
+                        ? 'bg-accent/10 border border-accent/20 text-white'
+                        : 'bg-white/5 text-text-secondary hover:bg-white/10'
+                    }`}
+                    onClick={() => switchProfile(profile.id)}
+                  >
+                    <LucideIcons.FileText className={`w-3.5 h-3.5 ${appState.activeProfileId === profile.id ? 'text-accent' : ''}`} />
+                    {editingProfileId === profile.id ? (
+                      <input
+                        autoFocus
+                        value={profile.name}
+                        onChange={e => renameProfile(profile.id, e.target.value)}
+                        onBlur={() => setEditingProfileId(null)}
+                        onKeyDown={e => e.key === 'Enter' && setEditingProfileId(null)}
+                        onClick={e => e.stopPropagation()}
+                        className="bg-transparent border-b border-accent outline-none text-sm w-24 text-white"
+                      />
+                    ) : (
+                      <span className="text-sm font-medium tracking-wide">
+                        {profile.name}
+                      </span>
+                    )}
+                  </div>
+                  
+                  {appState.activeProfileId === profile.id && (
+                    <div className="absolute -top-2 -right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-md">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setEditingProfileId(profile.id); }}
+                        className="p-1 rounded-full bg-blue-500 hover:bg-blue-400 text-white"
+                        title="Rename Resume"
+                      >
+                        <LucideIcons.Edit2 className="w-3 h-3" />
+                      </button>
+                      {profile.id !== 'main' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setProfileToDelete(profile.id); }}
+                          className="p-1 rounded-full bg-red-500 hover:bg-red-400 text-white"
+                          title="Delete Resume"
+                        >
+                          <LucideIcons.X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+              <button
+                onClick={() => createProfile('New Resume')}
+                className="flex items-center gap-2 px-4 py-2 rounded-full border border-dashed border-white/20 text-text-secondary hover:text-white hover:border-white/40 transition-all shrink-0 ml-2"
+              >
+                <LucideIcons.Plus className="w-4 h-4" />
+                <span className="text-sm font-medium">Clone Main</span>
+              </button>
+            </div>
+          </motion.div>
           
           {/* Row 1: Colors */}
           <motion.div 
@@ -201,92 +608,157 @@ export default function EditPage() {
           {/* Row 2: Tabs & Add Block */}
           <motion.div 
             initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-            className="flex items-center justify-between gap-2 bg-white/5 p-2 rounded-3xl backdrop-blur-md border border-white/10 xl:w-[1310px] xl:-ml-[100px] w-full"
+            className="flex items-center justify-between gap-2 bg-white/5 p-2 rounded-3xl backdrop-blur-md border border-white/10 xl:w-[1310px] xl:-ml-[100px] w-full relative z-30"
           >
-            {/* Info Tab (Fixed) */}
-            <button
-              onClick={() => handleTabClick('info')}
-              data-active={activeTab === 'info'}
-              className={`flex items-center gap-2 px-6 py-2.5 rounded-full transition-all whitespace-nowrap hover-glow shrink-0 ${
-                activeTab === 'info' 
-                  ? 'bg-accent text-bg font-medium shadow-[0_0_15px_var(--theme-accent)]' 
-                  : 'text-text-secondary hover:text-accent hover:bg-white/5'
-              }`}
-            >
-              <LucideIcons.User className="w-4 h-4" />
-              <span className="text-sm tracking-widest uppercase">Info</span>
-            </button>
+            {isMobile ? (
+              <div className="relative flex-[2]">
+                 <button 
+                   onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                   className="flex items-center justify-between w-full px-5 py-2.5 rounded-full whitespace-nowrap hover-glow bg-accent text-bg font-medium shadow-[0_0_15px_var(--theme-accent)]"
+                 >
+                   <div className="flex items-center gap-2">
+                     {activeTab === 'info' ? <LucideIcons.User className="w-4 h-4" /> : (() => {
+                       const Icon = ICONS[activeTab] || LucideIcons.Briefcase;
+                       return <Icon className="w-4 h-4" />;
+                     })()}
+                     <span className="text-sm tracking-widest uppercase truncate max-w-[100px]">
+                       {activeTab === 'info' ? 'Info' : data.blocks[activeTab]?.title}
+                     </span>
+                   </div>
+                   <LucideIcons.ChevronDown className={`w-4 h-4 transition-transform ${isMobileMenuOpen ? 'rotate-180' : ''}`} />
+                 </button>
 
-            {/* Draggable Tabs */}
-            <Droppable droppableId="tabs" direction="horizontal" type="tabs">
-              {(provided) => (
-                <div 
-                  {...provided.droppableProps} 
-                  ref={(el) => {
-                    provided.innerRef(el);
-                    // @ts-ignore
-                    tabsContainerRef.current = el;
-                  }}
-                  className="flex gap-2 items-center overflow-x-auto glass-scrollbar flex-1 px-2 overscroll-x-contain"
+                 <AnimatePresence>
+                   {isMobileMenuOpen && (
+                     <motion.div 
+                       initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+                       className="absolute top-14 left-0 right-0 glass rounded-3xl flex flex-col p-2 gap-1 z-50 border border-white/10 shadow-2xl min-w-[200px]"
+                     >
+                       <button
+                         onClick={() => { handleTabClick('info'); setIsMobileMenuOpen(false); }}
+                         className={`flex items-center gap-3 px-4 py-3 rounded-2xl transition-all ${activeTab === 'info' ? 'bg-accent/20 text-white' : 'text-text-secondary hover:bg-white/5 hover:text-white'}`}
+                       >
+                         <LucideIcons.User className="w-4 h-4" />
+                         <span className="text-sm tracking-widest uppercase font-medium">Info</span>
+                       </button>
+                       {data.blockOrder.map(blockId => {
+                         const block = data.blocks[blockId];
+                         if (!block) return null;
+                         const Icon = ICONS[blockId] || LucideIcons.Briefcase;
+                         return (
+                           <div key={blockId} className="flex items-center gap-1 group">
+                             <button
+                               onClick={() => { handleTabClick(blockId); setIsMobileMenuOpen(false); }}
+                               className={`flex-1 flex items-center gap-3 px-4 py-3 rounded-2xl transition-all text-left truncate ${activeTab === blockId ? 'bg-accent/20 text-white' : 'text-text-secondary hover:bg-white/5 hover:text-white'}`}
+                             >
+                               <Icon className="w-4 h-4 shrink-0" />
+                               <span className="text-sm tracking-widest uppercase font-medium truncate">{block.title}</span>
+                             </button>
+                             <button
+                               onClick={() => {
+                                 setBlockToDelete(blockId);
+                                 setIsMobileMenuOpen(false);
+                               }}
+                               className="p-3 text-text-secondary hover:text-red-400 transition-all rounded-xl hover:bg-red-500/10 shrink-0"
+                             >
+                               <LucideIcons.X className="w-4 h-4" />
+                             </button>
+                           </div>
+                         )
+                       })}
+                     </motion.div>
+                   )}
+                 </AnimatePresence>
+              </div>
+            ) : (
+              <>
+                {/* Info Tab (Fixed) */}
+                <button
+                  onClick={() => handleTabClick('info')}
+                  data-active={activeTab === 'info'}
+                  className={`flex items-center gap-2 px-6 py-2.5 rounded-full transition-all whitespace-nowrap hover-glow shrink-0 ${
+                    activeTab === 'info' 
+                      ? 'bg-accent text-bg font-medium shadow-[0_0_15px_var(--theme-accent)]' 
+                      : 'text-text-secondary hover:text-accent hover:bg-white/5'
+                  }`}
                 >
-                  {data.blockOrder.map((blockId, index) => {
-                    const block = data.blocks[blockId];
-                    if (!block) return null;
-                    const Icon = ICONS[blockId] || LucideIcons.Briefcase;
-                    const isActive = activeTab === blockId;
+                  <LucideIcons.User className="w-4 h-4" />
+                  <span className="text-sm tracking-widest uppercase">Info</span>
+                </button>
 
-                    return (
-                      // @ts-expect-error key is valid in React
-                      <Draggable key={block.id} draggableId={block.id} index={index}>
-                        {(provided, snapshot) => (
-                          <div
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            data-active={isActive}
-                            className={`relative flex items-center gap-2 px-6 py-2.5 rounded-full transition-all whitespace-nowrap hover-glow shrink-0 group ${snapshot.isDragging ? 'z-50 shadow-2xl' : ''} ${
-                              isActive 
-                                ? 'bg-accent text-bg font-medium shadow-[0_0_15px_var(--theme-accent)]' 
-                                : 'text-text-secondary hover:text-accent hover:bg-white/5'
-                            }`}
-                          >
-                            <div 
-                              {...provided.dragHandleProps}
-                              className="cursor-grab active:cursor-grabbing opacity-50 hover:opacity-100"
-                            >
-                              <LucideIcons.GripVertical className="w-4 h-4" />
-                            </div>
-                            <button onClick={() => handleTabClick(blockId)} className="flex items-center gap-2 px-2">
-                              <Icon className="w-4 h-4" />
-                              <span className="text-sm tracking-widest uppercase">{block.title}</span>
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setBlockToDelete(blockId);
-                              }}
-                              className="w-6 h-6 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 bg-white/10 text-white hover:bg-white/20"
-                              title="Delete Section"
-                            >
-                              <LucideIcons.X className="w-3 h-3" />
-                            </button>
-                          </div>
-                        )}
-                      </Draggable>
-                    );
-                  })}
-                  {provided.placeholder}
-                </div>
-              )}
-            </Droppable>
+                {/* Draggable Tabs */}
+                <Droppable droppableId="tabs" direction="horizontal" type="tabs">
+                  {(provided) => (
+                    <div 
+                      {...provided.droppableProps} 
+                      ref={(el) => {
+                        provided.innerRef(el);
+                        // @ts-ignore
+                        tabsContainerRef.current = el;
+                      }}
+                      className="flex gap-2 items-center overflow-x-auto glass-scrollbar flex-1 px-2 overscroll-x-contain"
+                    >
+                      {data.blockOrder.map((blockId, index) => {
+                        const block = data.blocks[blockId];
+                        if (!block) return null;
+                        const Icon = ICONS[blockId] || LucideIcons.Briefcase;
+                        const isActive = activeTab === blockId;
+
+                        return (
+                          // @ts-expect-error key is valid in React
+                          <Draggable key={block.id} draggableId={block.id} index={index}>
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                data-active={isActive}
+                                className={`relative flex items-center gap-2 px-6 py-2.5 rounded-full transition-all whitespace-nowrap hover-glow shrink-0 group ${snapshot.isDragging ? 'z-50 shadow-2xl' : ''} ${
+                                  isActive 
+                                    ? 'bg-accent text-bg font-medium shadow-[0_0_15px_var(--theme-accent)]' 
+                                    : 'text-text-secondary hover:text-accent hover:bg-white/5'
+                                }`}
+                              >
+                                <div 
+                                  {...provided.dragHandleProps}
+                                  className="cursor-grab active:cursor-grabbing opacity-50 hover:opacity-100"
+                                >
+                                  <LucideIcons.GripVertical className="w-4 h-4" />
+                                </div>
+                                <button onClick={() => handleTabClick(blockId)} className="flex items-center gap-2 px-2">
+                                  <Icon className="w-4 h-4" />
+                                  <span className="text-sm tracking-widest uppercase">{block.title}</span>
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setBlockToDelete(blockId);
+                                  }}
+                                  className="w-6 h-6 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 bg-white/10 text-white hover:bg-white/20"
+                                  title="Delete Section"
+                                >
+                                  <LucideIcons.X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            )}
+                          </Draggable>
+                        );
+                      })}
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+              </>
+            )}
 
             {/* Add Block Buttons */}
-            <div className="flex items-center gap-2 pl-2 border-l border-white/10 shrink-0">
+            <div className={`flex items-center gap-1 ${isMobile ? 'flex-[3] justify-end' : 'pl-2 border-l border-white/10 shrink-0'}`}>
               <button
                 onClick={() => {
                   const newId = addBlock('list');
                   handleTabClick(newId);
+                  if (isMobile) setIsMobileMenuOpen(false);
                 }}
-                className="flex items-center gap-1 px-4 py-2 rounded-full text-xs uppercase tracking-widest text-text-secondary hover:text-accent hover:bg-white/5 transition-colors hover-glow whitespace-nowrap"
+                className={`flex items-center justify-center gap-1 px-3 py-2.5 rounded-full text-[10px] sm:text-xs uppercase tracking-widest text-text-secondary hover:text-accent hover:bg-white/5 transition-colors hover-glow whitespace-nowrap ${isMobile ? 'flex-1 border border-white/10 bg-white/5' : ''}`}
               >
                 <LucideIcons.Plus className="w-3 h-3" /> List
               </button>
@@ -294,29 +766,37 @@ export default function EditPage() {
                 onClick={() => {
                   const newId = addBlock('tags');
                   handleTabClick(newId);
+                  if (isMobile) setIsMobileMenuOpen(false);
                 }}
-                className="flex items-center gap-1 px-4 py-2 rounded-full text-xs uppercase tracking-widest text-text-secondary hover:text-accent hover:bg-white/5 transition-colors hover-glow whitespace-nowrap"
+                className={`flex items-center justify-center gap-1 px-3 py-2.5 rounded-full text-[10px] sm:text-xs uppercase tracking-widest text-text-secondary hover:text-accent hover:bg-white/5 transition-colors hover-glow whitespace-nowrap ${isMobile ? 'flex-1 border border-white/10 bg-white/5' : ''}`}
               >
                 <LucideIcons.Plus className="w-3 h-3" /> Tags
               </button>
             </div>
           </motion.div>
 
-          {/* Row 3: Share & View */}
+          {/* Row 3: Actions */}
           <motion.div 
             initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-            className="flex justify-center gap-4"
+            className="flex flex-wrap justify-center gap-4"
           >
             <button
-              onClick={handleCopyLink}
-              className="glass px-8 py-3 rounded-full flex items-center justify-center gap-2 text-sm uppercase tracking-widest hover:bg-white/10 transition-colors text-text-secondary hover:text-accent hover-glow whitespace-nowrap"
+              onClick={() => setIsShareModalOpen(true)}
+              disabled={isSharing}
+              className="glass px-6 py-3 rounded-full flex items-center justify-center gap-2 text-xs md:text-sm uppercase tracking-widest hover:bg-white/10 transition-colors text-text-secondary hover:text-accent hover-glow whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {copied ? <LucideIcons.Check className="w-4 h-4 text-green-400" /> : <LucideIcons.Copy className="w-4 h-4" />}
-              {copied ? 'Copied!' : 'Share Link'}
+              {copied ? <LucideIcons.Check className="w-4 h-4 text-green-400" /> : <LucideIcons.Share2 className="w-4 h-4" />}
+              {copied ? 'Copied!' : 'Share'}
+            </button>
+            <button
+              onClick={handleExportPDF}
+              className="glass px-6 py-3 rounded-full flex items-center justify-center gap-2 text-xs md:text-sm uppercase tracking-widest hover:bg-white/10 transition-colors text-text-secondary hover:text-accent hover-glow whitespace-nowrap"
+            >
+              <LucideIcons.Download className="w-4 h-4" /> Export PDF
             </button>
             <Link
               to="/view"
-              className="glass px-8 py-3 rounded-full flex items-center justify-center gap-2 text-sm uppercase tracking-widest hover:bg-white/10 transition-colors text-accent hover-glow whitespace-nowrap"
+              className="glass px-6 py-3 rounded-full flex items-center justify-center gap-2 text-xs md:text-sm uppercase tracking-widest hover:bg-white/10 transition-colors text-accent hover-glow whitespace-nowrap"
             >
               <LucideIcons.Eye className="w-4 h-4" /> View Showcase
             </Link>
@@ -336,6 +816,67 @@ export default function EditPage() {
                 transition={{ duration: 0.3 }}
                 className="flex flex-col items-center text-center space-y-12 py-12"
               >
+                {/* Photo Upload Section */}
+                <div className="w-full flex flex-col items-center gap-6 mb-4">
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setIsPhotoDragging(true); }}
+                    onDragLeave={() => setIsPhotoDragging(false)}
+                    onDrop={(e) => { 
+                      e.preventDefault(); 
+                      setIsPhotoDragging(false); 
+                      const file = e.dataTransfer.files[0]; 
+                      if(file) handleImageUpload(file); 
+                    }}
+                    className={`w-32 h-32 md:w-48 md:h-48 rounded-[2rem] flex flex-col items-center justify-center overflow-hidden transition-all duration-300 relative group cursor-pointer border-2 shadow-2xl ${isPhotoDragging ? 'border-accent bg-accent/10 scale-105' : 'border-white/10 bg-white/5 hover:border-accent/40'}`}
+                    onClick={() => document.getElementById('photo-upload')?.click()}
+                  >
+                    <input 
+                      id="photo-upload" 
+                      type="file" 
+                      accept=".jpg,.jpeg,.png,.heif,.heic" 
+                      className="hidden" 
+                      onChange={(e) => { const file = e.target.files?.[0]; if(file) handleImageUpload(file); }} 
+                    />
+                    {data.profile.photo ? (
+                      <>
+                        <img src={data.profile.photo} className="w-full h-full object-cover" alt="Profile avatar" />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                          <LucideIcons.Upload className="w-6 h-6 text-white" />
+                        </div>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); updateProfile('photo', ''); }} 
+                          className="absolute top-2 right-2 p-1.5 bg-red-500/80 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                        >
+                           <LucideIcons.X className="w-3 h-3 text-white" />
+                        </button>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center gap-3 text-text-secondary">
+                         <LucideIcons.ImagePlus className={`w-8 h-8 transition-colors ${isPhotoDragging ? 'text-accent' : 'opacity-50 group-hover:text-accent group-hover:opacity-100'}`} />
+                         <span className="text-[10px] tracking-widest text-center px-4 uppercase opacity-70">Drop photo or Click</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {data.profile.photo && (
+                    <div className="flex items-center gap-2 glass px-4 py-2 rounded-full border border-white/5">
+                      <span className="text-xs uppercase tracking-widest text-text-secondary mr-2">Position in Layout:</span>
+                      <button 
+                        onClick={() => updateProfile('photoPosition', 'left')} 
+                        className={`px-4 py-1.5 rounded-full text-xs uppercase tracking-widest transition-all ${(!data.profile.photoPosition || data.profile.photoPosition === 'left') ? 'bg-accent/20 text-white border border-accent/30' : 'text-text-secondary hover:text-white border border-transparent'}`}
+                      >
+                        Left
+                      </button>
+                      <button 
+                        onClick={() => updateProfile('photoPosition', 'right')} 
+                        className={`px-4 py-1.5 rounded-full text-xs uppercase tracking-widest transition-all ${data.profile.photoPosition === 'right' ? 'bg-accent/20 text-white border border-accent/30' : 'text-text-secondary hover:text-white border border-transparent'}`}
+                      >
+                        Right
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 <div className="w-full flex flex-col items-center">
                   <div
                     contentEditable
@@ -540,9 +1081,9 @@ export default function EditPage() {
                 )}
 
                 {activeBlock.type === 'tags' && (
-                  <Droppable droppableId={activeBlock.id} type="tag-items" direction="horizontal">
+                  <Droppable droppableId={activeBlock.id} type="tag-items">
                     {(provided) => (
-                      <div {...provided.droppableProps} ref={provided.innerRef} className="flex flex-wrap gap-3">
+                      <div {...provided.droppableProps} ref={provided.innerRef} className="space-y-4">
                         {activeBlock.items.map((item: TagItem, index: number) => (
                           // @ts-expect-error key is valid in React
                           <Draggable key={item.id} draggableId={item.id} index={index}>
@@ -550,35 +1091,38 @@ export default function EditPage() {
                               <div 
                                 ref={provided.innerRef}
                                 {...provided.draggableProps}
-                                className={`glass px-4 py-2 rounded-full flex items-center gap-2 border-accent/20 ${snapshot.isDragging ? 'z-50 shadow-2xl' : ''} hover-glow`}
+                                className={`glass p-4 rounded-xl flex items-center gap-4 border-accent/20 ${snapshot.isDragging ? 'z-50 shadow-2xl' : ''} hover-glow group`}
                               >
                                 <div 
                                   {...provided.dragHandleProps}
-                                  className="cursor-grab active:cursor-grabbing text-white/40 hover:text-accent"
+                                  className="cursor-grab active:cursor-grabbing text-white/20 hover:text-accent transition-colors"
                                 >
-                                  <LucideIcons.GripVertical className="w-3 h-3" />
+                                  <LucideIcons.GripVertical className="w-5 h-5" />
                                 </div>
                                 <input
                                   value={item.text}
                                   onChange={e => updateTagItem(activeBlock.id, item.id, e.target.value)}
-                                  size={Math.max(item.text.length, 3)}
-                                  className="bg-transparent border-b border-transparent hover:border-white/20 focus:border-accent outline-none text-sm tracking-widest uppercase text-accent/90 transition-colors"
+                                  placeholder="Category/skills"
+                                  className="flex-1 bg-transparent border-b border-white/10 hover:border-white/30 focus:border-accent outline-none text-base tracking-wide text-white transition-colors pb-1 font-['Georgia']"
                                 />
-                                <button onClick={() => removeTagItem(activeBlock.id, item.id)} className="hover:text-red-400 transition-colors">
-                                  <LucideIcons.X className="w-3 h-3" />
+                                <button onClick={() => removeTagItem(activeBlock.id, item.id)} className="text-text-secondary hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all">
+                                  <LucideIcons.X className="w-4 h-4" />
                                 </button>
                               </div>
                             )}
                           </Draggable>
                         ))}
                         {provided.placeholder}
-                        <input
-                          value={newTags[activeBlock.id] || ''}
-                          onChange={e => setNewTags(prev => ({ ...prev, [activeBlock.id]: e.target.value }))}
-                          onKeyDown={e => handleTagKeyDown(e, activeBlock.id)}
-                          placeholder="+ Add (Press Enter)"
-                          className="bg-transparent border-b border-white/20 focus:border-accent outline-none text-xs tracking-widest uppercase px-2 w-48 transition-colors"
-                        />
+                        <div className="glass p-4 rounded-xl flex items-center gap-4">
+                          <LucideIcons.Plus className="w-5 h-5 text-text-secondary opacity-50" />
+                          <input
+                            value={newTags[activeBlock.id] || ''}
+                            onChange={e => setNewTags(prev => ({ ...prev, [activeBlock.id]: e.target.value }))}
+                            onKeyDown={e => handleTagKeyDown(e, activeBlock.id)}
+                            placeholder="Add new category/skills (e.g., Python: ML, NLP) (Press Enter)"
+                            className="flex-1 bg-transparent border-b border-white/20 focus:border-accent outline-none text-sm tracking-wide px-1 pb-1 transition-colors text-text-secondary"
+                          />
+                        </div>
                       </div>
                     )}
                   </Droppable>
