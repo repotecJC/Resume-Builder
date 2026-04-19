@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ResumeData } from '../types';
 import { DEFAULT_RESUME } from '../data/defaultResume';
+import { PERSONAL_TEMPLATE_BACKUP } from '../data/personalBackup';
 
 const APP_STORAGE_KEY = 'elegant_resume_app_data';
 const OLD_STORAGE_KEY = 'elegant_resume_data';
@@ -364,6 +365,29 @@ export function useResume() {
     });
   };
 
+  const resetToDefault = () => {
+    localStorage.removeItem(APP_STORAGE_KEY);
+    localStorage.removeItem(OLD_STORAGE_KEY);
+    setAppState({
+      activeProfileId: 'main',
+      profiles: {
+        'main': { id: 'main', name: 'Main profile', data: DEFAULT_RESUME }
+      }
+    });
+  };
+
+  const loadPersonalBackup = () => {
+    const backupId = `backup-${Date.now()}`;
+    setAppState(prev => ({
+      ...prev,
+      activeProfileId: backupId,
+      profiles: {
+        ...prev.profiles,
+        [backupId]: { id: backupId, name: 'Personal Backup', data: PERSONAL_TEMPLATE_BACKUP }
+      }
+    }));
+  };
+
   return {
     appState,
     switchProfile,
@@ -389,6 +413,8 @@ export function useResume() {
     addContactItem,
     updateContactItem,
     removeContactItem,
-    updateProfileData
+    updateProfileData,
+    resetToDefault,
+    loadPersonalBackup
   };
 }

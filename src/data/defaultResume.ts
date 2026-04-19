@@ -4,16 +4,16 @@ export const DEFAULT_RESUME: ResumeData = {
   themeColor: "#e5e5e5",
   enableAnimation: true,
   profile: {
-    name: "Joe Chou",
-    title: "Software Engineer",
-    location: "Zhongzheng Dist., Taipei City",
-    email: "mujoecs@gmail.com",
-    summary: "Software Engineer with practical experience in backend development, data analysis, and automation. Proficient in Python (Django, Machine Learning, Computer Vision), C# (UiPath RPA), and Smart Contract development (Sui Move). Highly passionate about learning new technologies and solving complex problems. Excellent English communication skills, ready to collaborate in international environments. Seeking full-time software engineering roles to drive product value.",
+    name: "Alex Rivera",
+    title: "Product Designer",
+    location: "Metropolis, Earth",
+    email: "hello@alexrivera.design",
+    summary: "Visionary Product Designer with a focus on creating intuitive, human-centered digital experiences. Expert in bridging the gap between user needs and business goals through elegant design and strategic thinking.",
     summaryAlign: 'center',
     summaryWidth: 100,
     contactItems: [
-      { id: "c1", icon: "MapPin", text: "Zhongzheng Dist., Taipei City", url: "" },
-      { id: "c2", icon: "Mail", text: "mujoecs@gmail.com", url: "mailto:mujoecs@gmail.com" }
+      { id: "c1", icon: "MapPin", text: "Metropolis, Earth", url: "" },
+      { id: "c2", icon: "Mail", text: "hello@alexrivera.design", url: "mailto:hello@alexrivera.design" }
     ]
   },
   blockOrder: ["experience", "education", "skills", "languages"],
@@ -25,31 +25,10 @@ export const DEFAULT_RESUME: ResumeData = {
       items: [
         { 
           id: "e1", 
-          title: "Software Engineer", 
-          subtitle: "CTBC Insurance Co., Ltd.", 
-          period: "Jul 2025 - Present", 
-          description: "RPA project requirement analysis, design, development, and maintenance. Internal system requirement analysis.\n#SoftwareDesign #SystemArchitecture #VB.net" 
-        },
-        { 
-          id: "e2", 
-          title: "English Teaching Assistant", 
-          subtitle: "GINI Education", 
-          period: "Oct 2024 - Feb 2025", 
-          description: "Children's English teaching. Planned and executed teaching activities, designed teaching media, and provided adaptive tutoring." 
-        },
-        { 
-          id: "e3", 
-          title: "IT Intern", 
-          subtitle: "CTBC Bank", 
-          period: "Jul 2023 - Aug 2023", 
-          description: "FinTech competitor analysis, report writing, FSC policy research, and internal data analysis." 
-        },
-        { 
-          id: "e4", 
-          title: "On-site Interpreter", 
-          subtitle: "JOMEL", 
-          period: "Mar 2026 - Mar 2026", 
-          description: "Assisted in real-time bilingual translation for events, ensuring accurate information delivery and smooth event execution." 
+          title: "Senior Product Designer", 
+          subtitle: "Design Studio X", 
+          period: "Jan 2022 - Present", 
+          description: "Led the design of award-winning mobile applications and cross-platform design systems.\n#ProductDesign #UIUX #DesignSystems" 
         }
       ]
     },
@@ -60,17 +39,10 @@ export const DEFAULT_RESUME: ResumeData = {
       items: [
         { 
           id: "edu1", 
-          title: "BSc Information Technology", 
-          subtitle: "University of the West of England (UK)", 
-          period: "Sep 2023 - Jun 2024", 
-          description: "Graduated with comprehensive knowledge in IT." 
-        },
-        { 
-          id: "edu2", 
-          title: "BSc Artificial Intelligence", 
-          subtitle: "CTBC Business School", 
-          period: "Sep 2020 - Jun 2024", 
-          description: "Focused on AI, Machine Learning, and Data Science." 
+          title: "BFA in Communication Design", 
+          subtitle: "University of Arts", 
+          period: "Sep 2014 - Jun 2018", 
+          description: "Focus on interactive media and typography." 
         }
       ]
     },
@@ -79,11 +51,9 @@ export const DEFAULT_RESUME: ResumeData = {
       title: "Expertise",
       type: "tags",
       items: [
-        { id: "s1", text: "Python (Django, OpenCV, NLP)" },
-        { id: "s2", text: "Machine Learning & TensorFlow" },
-        { id: "s3", text: "Smart Contracts (Sui Move, Web3)" },
-        { id: "s4", text: "C# & UiPath RPA" },
-        { id: "s5", text: "Prompt Engineering" }
+        { id: "s1", text: "Visual Design (Figma, Adobe XD)" },
+        { id: "s2", text: "User Research & Testing" },
+        { id: "s3", text: "Design Systems & Prototyping" }
       ]
     },
     languages: {
@@ -91,8 +61,8 @@ export const DEFAULT_RESUME: ResumeData = {
       title: "Languages",
       type: "tags",
       items: [
-        { id: "l1", text: "English (TOEIC 865, IELTS 6.5)" },
-        { id: "l2", text: "Mandarin (Native)" }
+        { id: "l1", text: "English (Native)" },
+        { id: "l2", text: "Spanish (Fluent)" }
       ]
     }
   }

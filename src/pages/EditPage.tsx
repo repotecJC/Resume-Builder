@@ -6,6 +6,7 @@ import Cropper from 'react-easy-crop';
 import { useResume } from '../hooks/useResume';
 import { ListItem, TagItem } from '../types';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 const createImage = (url: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
@@ -74,6 +75,7 @@ const THEME_COLORS = [
 const AVAILABLE_ICONS = ['MapPin', 'Mail', 'Phone', 'Link', 'Github', 'Linkedin', 'Twitter', 'Globe'];
 
 export default function EditPage() {
+  const { user, signOut, isNewUser } = useAuth();
   const { 
     appState,
     switchProfile,
@@ -99,8 +101,16 @@ export default function EditPage() {
     addContactItem,
     updateContactItem,
     removeContactItem,
-    updateProfileData
+    updateProfileData,
+    resetToDefault,
+    loadPersonalBackup
   } = useResume();
+
+  useEffect(() => {
+    if (user && isNewUser) {
+      resetToDefault();
+    }
+  }, [user, isNewUser]);
 
   const [activeTab, setActiveTab] = useState('info');
   const [direction, setDirection] = useState(0);
@@ -568,7 +578,35 @@ export default function EditPage() {
                 <LucideIcons.Plus className="w-4 h-4" />
                 <span className="text-sm font-medium">Clone Main</span>
               </button>
+              {user?.email === 'mujoecs@gmail.com' && (
+                <button
+                  onClick={loadPersonalBackup}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full border border-accent/40 bg-accent/5 text-accent hover:bg-accent/10 transition-all shrink-0 ml-2"
+                  title="Restore your Joe Chou profile"
+                >
+                  <LucideIcons.History className="w-4 h-4" />
+                  <span className="text-sm font-medium">Restore Backup</span>
+                </button>
+              )}
             </div>
+            {user && (
+              <div className="flex items-center gap-3 pl-4 border-l border-white/10 shrink-0">
+                 {user.photoURL ? (
+                   <img src={user.photoURL} alt="User avatar" className="w-8 h-8 rounded-full border border-white/20" />
+                 ) : (
+                   <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center">
+                     <LucideIcons.User className="w-4 h-4 text-white" />
+                   </div>
+                 )}
+                 <button
+                   onClick={signOut}
+                   className="text-white hover:text-red-400 transition-colors p-2"
+                   title="Log Out"
+                 >
+                   <LucideIcons.LogOut className="w-4 h-4" />
+                 </button>
+              </div>
+            )}
           </motion.div>
           
           {/* Row 1: Colors */}
