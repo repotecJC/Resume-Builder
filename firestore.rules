@@ -7,9 +7,22 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /users/{userId} {
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId 
+        && request.resource.data.keys().hasAll(['email', 'createdAt'])
+        && request.resource.data.email is string
+        && request.resource.data.createdAt is number;
+      allow update: if request.auth != null && request.auth.uid == userId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName', 'photoURL', 'lastLoginAt']);
+      allow delete: if false;
+      allow list: if false;
+    }
+
     match /sharedResumes/{resumeId} {
       // Anyone can generate a share link (create a document)
-      allow create: if true;
+      allow create: if true 
+        && request.resource.data.keys().hasAll(['id', 'data', 'createdAt']);
       // Anyone with the link (id) can read it
       allow get: if true;
       // Listing all resumes is forbidden (no scraping)
@@ -20,7 +33,8 @@ service cloud.firestore {
 
     match /liveResumes/{resumeId} {
       // Anyone can generate a live resume link
-      allow create: if true;
+      allow create: if true
+        && request.resource.data.keys().hasAll(['id', 'data', 'updateToken', 'createdAt']);
       // Anyone with the live link can view it
       allow get: if true;
       allow list: if false;

@@ -18,6 +18,26 @@ export interface AppState {
 }
 
 export function useResume() {
+  const sanitizeHtml = (str: string, maxLength: number = 2000) => {
+    if (typeof str !== 'string') return str;
+    // Basic sanitization: strip script/iframe tags and enforce length limits
+    let sanitized = str.replace(/<\/?(script|iframe|object|embed)[^>]*>/gi, '');
+    return sanitized.substring(0, maxLength);
+  };
+
+  const sanitizeObject = (obj: any): any => {
+    if (typeof obj === 'string') return sanitizeHtml(obj);
+    if (Array.isArray(obj)) return obj.map(sanitizeObject);
+    if (typeof obj === 'object' && obj !== null) {
+      const newObj: any = {};
+      for (const [key, value] of Object.entries(obj)) {
+        newObj[key] = sanitizeObject(value);
+      }
+      return newObj;
+    }
+    return obj;
+  };
+
   const [appState, setAppState] = useState<AppState>(() => {
     const savedApp = localStorage.getItem(APP_STORAGE_KEY);
     if (savedApp) {
@@ -78,13 +98,14 @@ export function useResume() {
   const updateProfileData = (updater: (prev: ResumeData) => ResumeData) => {
     setAppState(prev => {
       const activeData = prev.profiles[prev.activeProfileId].data;
+      const updatedData = sanitizeObject(updater(activeData));
       return {
         ...prev,
         profiles: {
           ...prev.profiles,
           [prev.activeProfileId]: {
             ...prev.profiles[prev.activeProfileId],
-            data: updater(activeData)
+            data: updatedData
           }
         }
       };

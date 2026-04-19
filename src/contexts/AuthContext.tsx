@@ -49,13 +49,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const signInWithGoogle = async () => {
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ prompt: 'select_account' });
-    await signInWithPopup(auth, provider);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      
+      // Optional: Domain restriction logic
+      // const allowedDomain = import.meta.env.VITE_ALLOWED_DOMAIN;
+      // if (allowedDomain && result.user.email && !result.user.email.endsWith(`@${allowedDomain}`)) {
+      //   await firebaseSignOut(auth);
+      //   alert(`Access restricted to ${allowedDomain} accounts only.`);
+      //   return;
+      // }
+    } catch (error: any) {
+      if (error.code === 'auth/too-many-requests') {
+        alert('Too many sign-in attempts. Please try again later.');
+      } else if (error.code !== 'auth/popup-closed-by-user') {
+        console.error('Sign-in error:', error);
+        alert('Failed to sign in. Please try again.');
+      }
+      throw error;
+    }
   };
 
   const signOut = async () => {
     await firebaseSignOut(auth);
+    // Clear all local resume states to prevent data leakage between sessions
+    localStorage.removeItem('elegant_resume_app_data');
+    localStorage.removeItem('elegant_resume_data');
+    window.location.href = '/'; // Force reload to clear all React state
   };
 
   const value = useMemo(() => ({
