@@ -23,6 +23,7 @@ export interface AppState {
 export function useResume() {
   const sanitizeHtml = (str: string, maxLength: number = 2000) => {
     if (typeof str !== 'string') return str;
+    if (str.startsWith('data:image/')) return str; // Allow full data URLs
     let sanitized = str.replace(/<\/?(script|iframe|object|embed)[^>]*>/gi, '');
     return sanitized.substring(0, maxLength);
   };
@@ -176,11 +177,11 @@ export function useResume() {
   };
 
   const deleteProfile = (id: string) => {
-    if (id === 'main') return;
     setAppState(prev => {
+      if (Object.keys(prev.profiles).length <= 1) return prev;
       const newProfiles = { ...prev.profiles };
       delete newProfiles[id];
-      const newActiveId = prev.activeProfileId === id ? 'main' : prev.activeProfileId;
+      const newActiveId = prev.activeProfileId === id ? Object.keys(newProfiles)[0] : prev.activeProfileId;
       return {
         activeProfileId: newActiveId,
         profiles: newProfiles
