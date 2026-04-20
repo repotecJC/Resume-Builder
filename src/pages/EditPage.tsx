@@ -179,28 +179,8 @@ export default function EditPage() {
 
   const handleExportPDF = () => {
     const printWindow = window.open('/view?print=true', '_blank');
-    if (printWindow) {
-      // We wait for the window to load and then send the data
-      // This solves the 'old data' problem because we send the CURRENT state
-      const checkLoad = setInterval(() => {
-        if (printWindow.closed) {
-          clearInterval(checkLoad);
-          return;
-        }
-        printWindow.postMessage({ type: 'RESUME_DATA_SYNC', data }, window.location.origin);
-      }, 500);
-
-      // Stop checking after 10 seconds
-      setTimeout(() => clearInterval(checkLoad), 10000);
-      
-      // Also register a listener to stop when the child acknowledges
-      const handleAck = (event: MessageEvent) => {
-        if (event.data?.type === 'RESUME_DATA_ACK') {
-          clearInterval(checkLoad);
-          window.removeEventListener('message', handleAck);
-        }
-      };
-      window.addEventListener('message', handleAck);
+    if (!printWindow) {
+      alert("Please allow popups to generate the PDF.");
     }
   };
 
