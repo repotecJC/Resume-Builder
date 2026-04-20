@@ -469,9 +469,9 @@ export default function EditPage() {
               <LucideIcons.FileWarning className="w-12 h-12 text-red-400 mb-4" />
               {Object.keys(appState.profiles).length <= 1 ? (
                 <>
-                  <h3 className="text-xl font-medium text-white mb-2">無法刪除文件</h3>
+                  <h3 className="text-xl font-medium text-white mb-2">Unable to delete the profile</h3>
                   <p className="text-text-secondary mb-8">
-                    至少要保留一個 Profile，不能全部刪除。
+                    At least one profile must be retained
                   </p>
                   <div className="flex gap-4 w-full">
                     <button
