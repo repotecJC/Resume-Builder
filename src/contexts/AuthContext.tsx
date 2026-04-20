@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { auth, db } from '../lib/firebase';
-import { onAuthStateChanged, User, signInWithRedirect, getRedirectResult, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface AuthContextType {
@@ -19,18 +19,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isNewUser, setIsNewUser] = useState(false);
 
   useEffect(() => {
-    getRedirectResult(auth)
-      .then((result) => {
-        if (result?.user) {
-          setUser(result.user);
-        }
-      })
-      .catch((error) => {
-        if (error.code !== 'auth/no-auth-event' && error.code !== 'auth/cancelled-popup-request') {
-          console.error("Redirect result error:", error);
-        }
-      });
-
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         try {
@@ -72,13 +60,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithRedirect(auth, provider);
+      await signInWithPopup(auth, provider);
       
-      // Note: Domain restriction logic has been removed here because
-      // signInWithRedirect immediately navigates the page away.
-      // Domain validation should happen in getRedirectResult or onAuthStateChanged instead.
+      // Note: User state will be correctly updated by the onAuthStateChanged listener
     } catch (error: any) {
-      if (error.code === 'auth/too-many-requests') {
+      if (error.code === 'auth/popup-closed-by-user') {
+        // User intentionally closed the popup, fail silently
+        return;
+      } else if (error.code === 'auth/popup-blocked') {
+        alert('Popup blocked by browser. Please allow popups for this site to sign in.');
+      } else if (error.code === 'auth/too-many-requests') {
         alert('Too many sign-in attempts. Please try again later.');
       } else {
         console.error('Sign-in error:', error);
