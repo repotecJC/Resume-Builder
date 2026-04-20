@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ResumeData } from '../types';
 import { DEFAULT_RESUME } from '../data/defaultResume';
 import { PERSONAL_TEMPLATE_BACKUP } from '../data/personalBackup';
+import { auth, db } from '../lib/firebase';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
 
 const APP_STORAGE_KEY = 'elegant_resume_app_data';
 const OLD_STORAGE_KEY = 'elegant_resume_data';
@@ -20,7 +23,6 @@ export interface AppState {
 export function useResume() {
   const sanitizeHtml = (str: string, maxLength: number = 2000) => {
     if (typeof str !== 'string') return str;
-    // Basic sanitization: strip script/iframe tags and enforce length limits
     let sanitized = str.replace(/<\/?(script|iframe|object|embed)[^>]*>/gi, '');
     return sanitized.substring(0, maxLength);
   };
@@ -38,59 +40,88 @@ export function useResume() {
     return obj;
   };
 
+  const [loading, setLoading] = useState(true);
   const [appState, setAppState] = useState<AppState>(() => {
+    // Initial local load to show something quickly before Firestore syncs
     const savedApp = localStorage.getItem(APP_STORAGE_KEY);
     if (savedApp) {
       try {
         const parsed = JSON.parse(savedApp);
         if (parsed.activeProfileId && parsed.profiles) {
-          // Migration check for missing contactItems or enableAnimation
-          Object.keys(parsed.profiles).forEach(key => {
-            const profileData = parsed.profiles[key].data;
-            if (!profileData.profile.contactItems) {
-              profileData.profile.contactItems = [
-                { id: "c1", icon: "MapPin", text: profileData.profile.location || "", url: "" },
-                { id: "c2", icon: "Mail", text: profileData.profile.email || "", url: profileData.profile.email ? `mailto:${profileData.profile.email}` : "" }
-              ];
-            }
-            if (profileData.enableAnimation === undefined) {
-              profileData.enableAnimation = true;
-            }
-          });
           return parsed;
         }
-      } catch (e) {
-        console.error('Failed to parse app data', e);
-      }
-    }
-
-    // Fallback to old storage migration or default
-    const savedOld = localStorage.getItem(OLD_STORAGE_KEY);
-    let initialData = DEFAULT_RESUME;
-    if (savedOld) {
-      try {
-        const parsedOld = JSON.parse(savedOld);
-        if (!parsedOld.profile.contactItems) {
-          parsedOld.profile.contactItems = [
-            { id: "c1", icon: "MapPin", text: parsedOld.profile.location || "", url: "" },
-            { id: "c2", icon: "Mail", text: parsedOld.profile.email || "", url: parsedOld.profile.email ? `mailto:${parsedOld.profile.email}` : "" }
-          ];
-        }
-        if (parsedOld.enableAnimation === undefined) parsedOld.enableAnimation = true;
-        initialData = parsedOld;
       } catch (e) {}
     }
-    
     return {
       activeProfileId: 'main',
       profiles: {
-        'main': { id: 'main', name: 'Main profile', data: initialData }
+        'main': { id: 'main', name: 'Main profile', data: DEFAULT_RESUME }
       }
     };
   });
 
+  const isInitialMount = useRef(true);
+  // Using a ref to track if remote initialization has settled (either loaded or confirmed no auth)
+  const isRemoteReady = useRef(false);
+
+  // 1. Sync from Firestore on auth state change
   useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const docRef = doc(db, 'users', user.uid, 'userState', 'state');
+          const snap = await getDoc(docRef);
+          if (snap.exists()) {
+            const remoteData = snap.data();
+            if (remoteData.activeProfileId && remoteData.profiles) {
+              setAppState(remoteData as AppState);
+              localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(remoteData));
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load user state from Firestore:", error);
+        }
+      }
+      // Regardless of logged in or logged out, the first resolution marks remote as "ready"
+      // to avoid race conditions overriding remote data with empty local data on mount.
+      isRemoteReady.current = true;
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Sync to local storage & Firestore on data change
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+
     localStorage.setItem(APP_STORAGE_KEY, JSON.stringify(appState));
+
+    // Do NOT push local state to firestore if we haven't resolved our initial auth check yet!
+    if (!isRemoteReady.current) {
+      return;
+    }
+
+    const syncToFirestore = async () => {
+      const user = auth.currentUser;
+      if (user) {
+        try {
+          const docRef = doc(db, 'users', user.uid, 'userState', 'state');
+          // Include updatedAt to handle conflicts and future-proofing
+          await setDoc(docRef, {
+             ...appState,
+             updatedAt: Date.now()
+          });
+        } catch (error) {
+          console.error("Failed to save state to Firestore:", error);
+        }
+      }
+    };
+
+    const timeoutId = setTimeout(syncToFirestore, 1500); // 1.5s debounce
+    return () => clearTimeout(timeoutId);
   }, [appState]);
 
   const data = appState.profiles[appState.activeProfileId]?.data || DEFAULT_RESUME;
@@ -123,7 +154,6 @@ export function useResume() {
   const createProfile = (name: string) => {
     const mainData = appState.profiles['main'].data;
     const newId = `profile-${Date.now()}`;
-    // Deep clone main data
     const newData = JSON.parse(JSON.stringify(mainData));
     
     setAppState(prev => ({
@@ -146,7 +176,7 @@ export function useResume() {
   };
 
   const deleteProfile = (id: string) => {
-    if (id === 'main') return; // Cannot delete main
+    if (id === 'main') return;
     setAppState(prev => {
       const newProfiles = { ...prev.profiles };
       delete newProfiles[id];
@@ -355,23 +385,21 @@ export function useResume() {
   };
 
   const addBlock = (type: 'list' | 'tags') => {
-    const newId = `block-${Date.now()}`;
-    setData(prev => {
-      return {
-        ...prev,
-        blocks: {
-          ...prev.blocks,
-          [newId]: {
-            id: newId,
-            type,
-            title: type === 'list' ? 'New Section' : 'New Tags',
-            items: []
-          }
-        },
-        blockOrder: [...prev.blockOrder, newId]
-      };
-    });
-    return newId;
+    const id = `block-${Date.now()}`;
+    setData(prev => ({
+      ...prev,
+      blocks: {
+        ...prev.blocks,
+        [id]: {
+          id,
+          type,
+          title: type === 'list' ? 'New Section' : 'Skills',
+          items: []
+        }
+      },
+      blockOrder: [...prev.blockOrder, id]
+    }));
+    return id;
   };
 
   const removeBlock = (blockId: string) => {
@@ -410,6 +438,7 @@ export function useResume() {
   };
 
   return {
+    loading,
     appState,
     switchProfile,
     createProfile,
