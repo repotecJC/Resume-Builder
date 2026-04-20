@@ -19,11 +19,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isNewUser, setIsNewUser] = useState(false);
 
   useEffect(() => {
-    getRedirectResult(auth).catch((error) => {
-      if (error.code !== 'auth/cancelled-popup-request') {
-        console.error('Redirect auth error:', error);
-      }
-    });
+    getRedirectResult(auth)
+      .then((result) => {
+        if (result?.user) {
+          setUser(result.user);
+        }
+      })
+      .catch((error) => {
+        if (error.code !== 'auth/no-auth-event' && error.code !== 'auth/cancelled-popup-request') {
+          console.error("Redirect result error:", error);
+        }
+      });
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
@@ -83,7 +89,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
-    await firebaseSignOut(auth);
+    try {
+      await firebaseSignOut(auth);
+      setUser(null); // force clear immediately
+    } catch (error) {
+      console.error("Logout Error:", error);
+      setUser(null); // clear even on error
+    }
     // Clear all local resume states to prevent data leakage between sessions
     localStorage.removeItem('elegant_resume_app_data');
     localStorage.removeItem('elegant_resume_data');
