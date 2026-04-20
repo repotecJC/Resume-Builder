@@ -39,9 +39,13 @@ export default function ViewPage() {
           } else {
             setError('Resume not found.');
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error(err);
-          setError('Failed to load resume.');
+          if (err.message && err.message.includes('offline')) {
+            setError('Unable to reach the server. Please check your internet connection or the application configuration.');
+          } else {
+            setError('Failed to load resume. Please verify the link.');
+          }
         } finally {
           setLoading(false);
         }

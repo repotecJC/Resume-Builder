@@ -9,8 +9,14 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import LandingPage from './pages/LandingPage';
 import EditPage from './pages/EditPage';
 import ViewPage from './pages/ViewPage';
+import { isConfigValid } from './lib/firebase';
+import FirebaseSetupGuide from './components/FirebaseSetupGuide';
 
 export default function App() {
+  if (!isConfigValid) {
+    return <FirebaseSetupGuide />;
+  }
+
   return (
     <BrowserRouter>
       <AuthProvider>
