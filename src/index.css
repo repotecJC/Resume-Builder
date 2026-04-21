@@ -101,10 +101,65 @@
     background: white !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+    height: 100vh; /* Force one page height */
+    overflow: hidden; /* Hide anything that spills over */
   }
-  /* Ensure backgrounds render gracefully when exported */
+
+  /* Force the A4 container to scale its contents to fit 1 page */
+  .print-page-container {
+    height: 297mm; /* 1 A4 Page Exact Height */
+    width: 210mm; /* A4 Width */
+    margin: 0 auto;
+    padding: 12mm 15mm; 
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  
+  /* Reset tailwind padding for print specifically inside the container */
+  .print-page-container.p-8 {
+    padding: 12mm 15mm !important;
+  }
+
+  /* Compact the specific blocks in print mode */
   .print-page {
-    page-break-after: auto;
-    page-break-inside: auto;
+    page-break-after: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 2mm !important; /* Extremely tight margins */
+  }
+  
+  /* Make text generally smaller */
+  .print-scale-text {
+    font-size: 0.8rem !important; /* Scale everything down globally for print */
+    line-height: 1.2 !important;
+  }
+
+  h1 { font-size: 1.5rem !important; margin-bottom: 1mm !important; }
+  h2 { font-size: 1.1rem !important; margin-bottom: 1mm !important; padding-bottom: 1px !important; }
+  h3 { font-size: 0.95rem !important; }
+  p { font-size: 0.75rem !important; margin-bottom: 1px !important; }
+  .text-sm { font-size: 0.7rem !important; }
+  .text-xl { font-size: 1rem !important; }
+  .text-6xl { font-size: 2rem !important; }
+  .gap-8 { gap: 4mm !important; }
+  .gap-6 { gap: 3mm !important; }
+  .mb-16 { margin-bottom: 4mm !important; }
+  .mb-8 { margin-bottom: 2mm !important; }
+  .mb-4 { margin-bottom: 1mm !important; }
+  .mb-6 { margin-bottom: 2mm !important; }
+  .mt-12 { margin-top: 3mm !important; }
+  .mt-4 { margin-top: 1mm !important; }
+  .space-y-8 > :not([hidden]) ~ :not([hidden]) {
+      --tw-space-y-reverse: 0;
+      margin-top: calc(2mm * calc(1 - var(--tw-space-y-reverse)));
+      margin-bottom: calc(2mm * var(--tw-space-y-reverse));
+  }
+  
+  /* Shrink photo */
+  .print-photo {
+    width: 60px !important;
+    height: 60px !important;
   }
 }
+

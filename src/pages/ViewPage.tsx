@@ -161,14 +161,14 @@ export default function ViewPage() {
 
   if (isPrint && data) {
     return (
-      <div className="bg-white min-h-screen text-black print:p-0 p-8 max-w-[1000px] mx-auto font-sans" style={{ '--theme-accent': data.themeColor } as CSSProperties}>
+      <div className="bg-white min-h-screen text-black print:p-0 p-8 max-w-[1000px] mx-auto font-sans print-page-container print-scale-text" style={{ '--theme-accent': data.themeColor } as CSSProperties}>
         <div className="print-page w-full flex flex-col mb-16">
           {/* For print layout, we enforce flex-row universally to prevent stacking on narrow print viewports */}
           <div className={`flex flex-row w-full gap-8 ${
             data.profile.photo ? (data.profile.photoPosition === 'right' ? 'flex-row-reverse' : '') : ''
           }`}>
             {data.profile.photo && (
-              <div className="w-48 h-48 rounded-full overflow-hidden shrink-0 border-4" style={{ borderColor: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>
+              <div className="w-48 h-48 rounded-full overflow-hidden shrink-0 border-4 print-photo" style={{ borderColor: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>
                 <img 
                   src={data.profile.photo} 
                   alt="Profile" 
