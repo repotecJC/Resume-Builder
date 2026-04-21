@@ -241,7 +241,7 @@ export default function ViewPage() {
               )}
 
               {block.type === 'tags' && (
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-2 md:grid-cols-3 print:grid-cols-3 gap-6">
                   {block.items.map((item: TagItem) => {
                     const idx = item.text.indexOf(':');
                     let category = item.text;
