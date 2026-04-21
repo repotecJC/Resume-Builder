@@ -195,6 +195,7 @@ export default function EditPage() {
           
           await setDoc(doc(db, 'liveResumes', data.liveId as string), {
             ...safeData,
+            ownerUid: user?.uid,
             updatedAt: Date.now()
           }, { merge: false });
         } catch (err) {
@@ -203,7 +204,7 @@ export default function EditPage() {
       }, 2000);
       return () => clearTimeout(timeoutId);
     }
-  }, [data]);
+  }, [data, user?.uid]);
 
   const generateShareLink = async (mode: 'snapshot' | 'live') => {
     setIsSharing(true);
@@ -247,6 +248,7 @@ export default function EditPage() {
             docRef = await addDoc(collection(db, 'liveResumes'), {
               ...safeData,
               updateToken,
+              ownerUid: user?.uid,
               createdAt: Date.now(),
               updatedAt: Date.now()
             });

@@ -33,13 +33,16 @@ service cloud.firestore {
 
     match /liveResumes/{resumeId} {
       // Anyone can generate a live resume link
-      allow create: if true
-        && request.resource.data.keys().hasAll(['profile', 'blocks', 'blockOrder', 'updateToken', 'createdAt']);
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasAny(['profile', 'blocks', 'blockOrder']);
       // Anyone with the live link can view it
       allow get: if true;
       allow list: if false;
-      // Updates require the creator's anonymous token to match
-      allow update: if request.resource.data.updateToken == resource.data.updateToken;
+      // Updates require the creator's anonymous token to match or the ownerUid to match (to patch the legacy vulnerability)
+      allow update: if request.auth != null && (
+        (resource.data.ownerUid == request.auth.uid) ||
+        (!("ownerUid" in resource.data) && request.resource.data.updateToken == resource.data.updateToken)
+      );
       allow delete: if false;
     }
   }
