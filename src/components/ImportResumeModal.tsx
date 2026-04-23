@@ -22,9 +22,9 @@ export const ImportResumeModal: React.FC<ImportResumeModalProps> = ({ isOpen, on
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validate size (max 6MB)
-    if (file.size > 6 * 1024 * 1024) {
-      setError("File is too large. Maximum size is 6MB.");
+    // Validate size (max 3MB for Vercel Free Tier compatibility)
+    if (file.size > 3 * 1024 * 1024) {
+      setError("File is too large. Maximum size is 3MB.");
       return;
     }
 
@@ -277,7 +277,7 @@ Do not just output single disconnected skills if they can be categorized.`;
                       <Upload className="w-6 h-6" />
                     </div>
                     <p className="text-sm font-medium text-indigo-900">Click to upload document</p>
-                    <p className="text-xs text-indigo-600/70">Max 6MB. Fast and secure.</p>
+                    <p className="text-xs text-indigo-600/70">Max 3MB. Fast and secure.</p>
                   </div>
                 )}
                 
