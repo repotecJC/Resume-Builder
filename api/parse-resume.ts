@@ -35,7 +35,7 @@ export default async function handler(req: any, res: any) {
 
     const prompt = `You are an expert ATS (Applicant Tracking System) data extractor.
 Extract the candidate's resume details from the provided document perfectly.
-You MUST extract ALL work experience and ALL education history. Do not skip any entries.
+You MUST extract ALL work experience and ALL education history. Do not skip or summarize any entries.
 
 CRITICAL INSTRUCTIONS FOR EXPERIENCE & EDUCATION:
 - "title": Job title or Degree name.
@@ -49,12 +49,12 @@ Format each skill entry STRICTLY as "Category: Skill1, Skill2, Skill3".
 For example: "Data: Python, SQL, R" or "Languages: English, Mandarin". Include languages and certifications here as well if they fit.
 
 IMPORTANT FOR CONTACT ITEMS:
-Extract all URLs, websites, LinkedIn, GitHub, emails, and phone numbers into "contactItems".
-For emails, MUST set url to "mailto:example@domain.com". 
-For phones, MUST set url to "tel:+123456789".
-For links, MUST include "https://".
+Extract all URLs, websites, LinkedIn, GitHub, emails, and phone numbers into the "contactItems" root array.
+For emails, set url to "mailto:example@domain.com". 
+For phones, set url to "tel:+123456789".
+For links, include "https://".
 
-Return ONLY the JSON matching the required schema. Do not hallucinate data.`;
+Return ONLY the JSON matching the required schema. Do not hallucinate data. Be very thorough.`;
 
     const result = await ai.models.generateContent({
       model: "gemini-3.1-flash-lite-preview",

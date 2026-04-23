@@ -158,13 +158,30 @@ export function useResume() {
     
     // Extract and format contact items
     const rawContactItems = parsedData.contactItems || [];
-    const formattedContactItems = rawContactItems.map((item: any) => {
-      let finalUrl = item.url || '';
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    let formattedContactItems = rawContactItems.map((item: any) => {
+      let textVal = (item.text || '').trim();
+      let finalUrl = (item.url || '').trim();
       
-      // Auto-prefix email if missing
-      if (emailRegex.test(finalUrl.trim()) && !finalUrl.toLowerCase().startsWith('mailto:')) {
-        finalUrl = `mailto:${finalUrl.trim()}`;
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      // Allow +, digits, spaces, hyphens, and parentheses, minimum 7 chars long for a phone number
+      const phoneRegex = /^[\+]?[(]?[0-9]{1,4}[)]?[-\s\./0-9]*$/;
+
+      // If AI forgot to provide URL but provided text, let's try to infer it
+      if (!finalUrl && textVal) {
+        if (emailRegex.test(textVal)) {
+          finalUrl = `mailto:${textVal}`;
+        } else if (phoneRegex.test(textVal) && textVal.replace(/\D/g, '').length >= 7) {
+          finalUrl = `tel:${textVal.replace(/[\s\-\(\)]/g, '')}`;
+        } else if (textVal.toLowerCase().includes('linkedin.com') || textVal.toLowerCase().includes('github.com')) {
+          finalUrl = textVal.startsWith('http') ? textVal : `https://${textVal}`;
+        }
+      } else if (finalUrl) {
+         // Auto-prefix existing URLs if missing
+         if (emailRegex.test(finalUrl) && !finalUrl.toLowerCase().startsWith('mailto:')) {
+           finalUrl = `mailto:${finalUrl}`;
+         } else if (phoneRegex.test(finalUrl) && finalUrl.replace(/\D/g, '').length >= 7 && !finalUrl.toLowerCase().startsWith('tel:')) {
+           finalUrl = `tel:${finalUrl.replace(/[\s\-\(\)]/g, '')}`;
+         }
       }
       
       return {
@@ -173,6 +190,16 @@ export function useResume() {
         id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36)
       };
     });
+
+    // Fallback: forcefully add email from profile if missing
+    if (parsedData.profile?.email && !formattedContactItems.find((c: any) => c.text.includes(parsedData.profile.email))) {
+        formattedContactItems.push({
+            id: `c-${Date.now()}-em`,
+            icon: 'Mail',
+            text: parsedData.profile.email,
+            url: `mailto:${parsedData.profile.email}`
+        });
+    }
 
     // Create new data starting from mainData defaults but with imported content
     const newData: ResumeData = {
@@ -292,6 +319,7 @@ export function useResume() {
   const updateContactItem = (id: string, field: string, value: string) => {
     setData(prev => {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const phoneRegex = /^[\+]?[(]?[0-9]{1,4}[)]?[-\s\./0-9]*$/;
 
       return {
         ...prev,
@@ -306,19 +334,24 @@ export function useResume() {
             if (field === 'url') {
               if (emailRegex.test(value.trim()) && !value.toLowerCase().startsWith('mailto:')) {
                 updatedItem.url = `mailto:${value.trim()}`;
+              } else if (phoneRegex.test(value.trim()) && value.replace(/\D/g, '').length >= 7 && !value.toLowerCase().startsWith('tel:')) {
+                updatedItem.url = `tel:${value.trim().replace(/[\s\-\(\)]/g, '')}`;
               }
             }
 
             // Handle typing in the Text field
             if (field === 'text') {
               const currentUrl = (item.url || '').toLowerCase();
-              const oldAutoUrl = `mailto:${item.text.trim()}`.toLowerCase();
+              const oldEmailAutoUrl = `mailto:${item.text.trim()}`.toLowerCase();
+              const oldPhoneAutoUrl = `tel:${item.text.replace(/[\s\-\(\)]/g, '')}`.toLowerCase();
               
-              // If it's a valid email, auto-fill the URL if it's currently empty, 
-              // or if the URL was previously auto-filled by the old text.
               if (emailRegex.test(value.trim())) {
-                if (!currentUrl || currentUrl === oldAutoUrl) {
+                if (!currentUrl || currentUrl === oldEmailAutoUrl || currentUrl === oldPhoneAutoUrl) {
                   updatedItem.url = `mailto:${value.trim()}`;
+                }
+              } else if (phoneRegex.test(value.trim()) && value.replace(/\D/g, '').length >= 7) {
+                 if (!currentUrl || currentUrl === oldPhoneAutoUrl || currentUrl === oldEmailAutoUrl) {
+                  updatedItem.url = `tel:${value.trim().replace(/[\s\-\(\)]/g, '')}`;
                 }
               }
             }
