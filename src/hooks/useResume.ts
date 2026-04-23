@@ -256,9 +256,10 @@ export function useResume() {
   };
 
   const createProfile = (name: string) => {
-    const mainData = appState.profiles['main'].data;
+    // Clone the active profile, not strictly 'main', to prevent crashes if main was deleted
+    const activeProfileData = appState.profiles[appState.activeProfileId]?.data || Object.values(appState.profiles)[0]?.data || DEFAULT_RESUME;
     const newId = `profile-${Date.now()}`;
-    const newData = JSON.parse(JSON.stringify(mainData));
+    const newData = JSON.parse(JSON.stringify(activeProfileData));
     
     setAppState(prev => ({
       activeProfileId: newId,

@@ -33,48 +33,25 @@ export default async function handler(req: any, res: any) {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    const prompt = `You are an expert ATS data extractor.
-Extract the candidate's resume details from the provided document perfectly.
-You MUST extract ALL work experience and ALL education history. Do not skip or summarize any entries.
+    const prompt = `You are a professional ATS resume parser.
+Extract the candidate's data from the document perfectly. 
+Extract ALL work experience and ALL education history. Do not skip any entries.
 
-CRITICAL INSTRUCTIONS FOR EXPERIENCE & EDUCATION:
-- "title": Job title or Degree name.
-- "subtitle": Company name or School name (include location if available).
-- "period": Date range.
-- "description": Combine all bullet points, responsibilities, and achievements into a single string. Use bullet points (•) and line breaks (\\n) within the string. DO NOT leave this empty!
+CRITICAL EXTRACTION RULES:
+1. Experience & Education:
+   - "title": Job title or Degree name.
+   - "subtitle": Company or School name (with location if present).
+   - "period": Date range (e.g. Jul 2023 - Sep 2023).
+   - "description": Combine all bullet points, responsibilities, and achievements into a single string. Use bullet points (•) and line breaks (\\n) to keep it formatted. Do not leave empty.
 
-IMPORTANT FOR SKILLS: 
-Group related skills together intelligently into domains (e.g., "Data: Python, SQL", "Languages: English, Mandarin"). 
+2. Skills:
+   - Group related skills smartly into domains.
+   - Format: "Category: Skill1, Skill2". Example: "Data: Python, SQL" or "Languages: English".
 
-IMPORTANT FOR CONTACT ITEMS:
-Extract all URLs, websites, LinkedIn, GitHub, emails, and phone numbers.
-For emails, set url to "mailto:example@domain.com". 
-For phones, set url to "tel:+123456789".
+3. Contact Items & Links:
+   - Extract URLs, LinkedIn, GitHub, emails, and phone numbers.
 
-OUTPUT FORMAT:
-Ensure the final output strictly adheres to this JSON structure:
-{
-  "profile": {
-    "name": "Full Name",
-    "title": "Professional Title",
-    "location": "City, Country",
-    "email": "email@example.com",
-    "summary": "Full professional summary. Do not leave empty!"
-  },
-  "contactItems": [
-    {
-      "icon": "Linkedin",
-      "text": "Joe Chou",
-      "url": "https://linkedin.com/in/..."
-    }
-  ],
-  "experience": [ ... ],
-  "education": [ ... ],
-  "skills": [ "Category: Skill1, Skill2", "Category: Skill3" ]
-}
-
-WARNING: NEVER place contactItems, experience, or raw JSON keys inside the skills array.
-Return ONLY the JSON matching the required schema. Do not hallucinate data. Be very thorough.`;
+Be thorough. Output valid JSON matching the schema.`;
 
     const result = await ai.models.generateContent({
       model: "gemini-3.1-flash-lite-preview",

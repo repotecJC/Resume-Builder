@@ -587,7 +587,7 @@ export default function EditPage() {
                 className="flex items-center gap-2 px-4 py-2 rounded-full border border-dashed border-white/20 text-text-secondary hover:text-white hover:border-white/40 transition-all shrink-0 ml-2"
               >
                 <LucideIcons.Plus className="w-4 h-4" />
-                <span className="text-sm font-medium">Clone Main</span>
+                <span className="text-sm font-medium">Clone Active</span>
               </button>
               {user?.email === 'mujoecs@gmail.com' && (
                 <button
