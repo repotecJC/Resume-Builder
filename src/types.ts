@@ -34,6 +34,7 @@ export interface TagItem {
 export interface Block {
   id: string;
   title: string;
+  icon?: string;
   type: 'list' | 'tags';
   items: any[]; // ListItem[] | TagItem[]
 }

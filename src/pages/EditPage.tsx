@@ -73,7 +73,8 @@ const THEME_COLORS = [
   '#8b5cf6', // Violet
 ];
 
-const AVAILABLE_ICONS = ['MapPin', 'Mail', 'Phone', 'Link', 'Github', 'Linkedin', 'Twitter', 'Globe'];
+const AVAILABLE_ICONS = ['MapPin', 'Mail', 'Phone', 'Link', 'Github', 'Linkedin', 'Twitter', 'Globe', 'Briefcase', 'GraduationCap', 'Code', 'User', 'Award', 'Layout', 'Star', 'Folder', 'File'];
+const AVAILABLE_BLOCK_ICONS = ['Briefcase', 'GraduationCap', 'Code', 'Globe', 'User', 'Award', 'Layout', 'Star', 'Folder', 'File', 'Book', 'Heart', 'Coffee', 'Cpu'];
 
 export default function EditPage() {
   const { user, signOut, isNewUser } = useAuth();
@@ -92,6 +93,7 @@ export default function EditPage() {
     reorderListItems,
     reorderTagItems,
     updateBlockTitle,
+    updateBlockIcon,
     addListItem,
     updateListItem,
     removeListItem,
@@ -184,7 +186,28 @@ export default function EditPage() {
     const printWindow = window.open('/view?print=true', '_blank');
     if (!printWindow) {
       alert("Please allow popups to generate the PDF.");
+      return;
     }
+    
+    // Continuously send the current data to the new window until acknowledged
+    const intervalId = setInterval(() => {
+      printWindow.postMessage({ type: 'RESUME_DATA_SYNC', data }, '*');
+    }, 200);
+
+    // Listen for the acknowledgment from the print window to stop sending
+    const handleAck = (event: MessageEvent) => {
+      if (event.data?.type === 'RESUME_DATA_ACK') {
+        clearInterval(intervalId);
+        window.removeEventListener('message', handleAck);
+      }
+    };
+    window.addEventListener('message', handleAck);
+
+    // Safety timeout to clear interval after 10 seconds just in case
+    setTimeout(() => {
+      clearInterval(intervalId);
+      window.removeEventListener('message', handleAck);
+    }, 10000);
   };
 
   // Auto-sync for Live Resumes
@@ -667,8 +690,9 @@ export default function EditPage() {
                  >
                    <div className="flex items-center gap-2">
                      {activeTab === 'info' ? <LucideIcons.User className="w-4 h-4" /> : (() => {
-                       const Icon = ICONS[activeTab] || LucideIcons.Briefcase;
-                       return <Icon className="w-4 h-4" />;
+                       const block = data.blocks[activeTab];
+                       const FinalIcon = block?.icon ? (LucideIcons as any)[block.icon] || LucideIcons.Briefcase : ICONS[activeTab] || LucideIcons.Briefcase;
+                       return <FinalIcon className="w-4 h-4" />;
                      })()}
                      <span className="text-sm tracking-widest uppercase truncate max-w-[100px]">
                        {activeTab === 'info' ? 'Info' : data.blocks[activeTab]?.title}
@@ -693,7 +717,7 @@ export default function EditPage() {
                        {data.blockOrder.map(blockId => {
                          const block = data.blocks[blockId];
                          if (!block) return null;
-                         const Icon = ICONS[blockId] || LucideIcons.Briefcase;
+                         const Icon = block.icon ? (LucideIcons as any)[block.icon] || LucideIcons.Briefcase : ICONS[blockId] || LucideIcons.Briefcase;
                          return (
                            <div key={blockId} className="flex items-center gap-1 group">
                              <button
@@ -750,7 +774,12 @@ export default function EditPage() {
                       {data.blockOrder.map((blockId, index) => {
                         const block = data.blocks[blockId];
                         if (!block) return null;
-                        const Icon = ICONS[blockId] || LucideIcons.Briefcase;
+                        const IconName = block.icon || 'Briefcase';
+                        const Icon = (LucideIcons as any)[IconName] || parseInt(block.icon as string) ? (LucideIcons as any)[ICONS[blockId] || 'Briefcase'] : ICONS[blockId] || LucideIcons.Briefcase;
+                        
+                        // Handle legacy static icon mapping or dynamic mapping
+                        const FinalIcon = block.icon ? (LucideIcons as any)[block.icon] || LucideIcons.Briefcase : ICONS[blockId] || LucideIcons.Briefcase;
+
                         const isActive = activeTab === blockId;
 
                         return (
@@ -773,16 +802,40 @@ export default function EditPage() {
                                 >
                                   <LucideIcons.GripVertical className="w-4 h-4" />
                                 </div>
-                                <button onClick={() => handleTabClick(blockId)} className="flex items-center gap-2 px-2">
-                                  <Icon className="w-4 h-4" />
-                                  <span className="text-sm tracking-widest uppercase">{block.title}</span>
-                                </button>
+                                <div onClick={() => handleTabClick(blockId)} className="flex items-center gap-2 px-2 cursor-pointer">
+                                  {isActive ? (
+                                    <div className="relative flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                                      <div className="relative shrink-0 flex items-center justify-center">
+                                        <select 
+                                          value={block.icon || 'Briefcase'} 
+                                          onChange={e => updateBlockIcon(blockId, e.target.value)}
+                                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        >
+                                          <option disabled value="">Icon</option>
+                                          {AVAILABLE_BLOCK_ICONS.map(i => <option key={i} value={i}>{i}</option>)}
+                                        </select>
+                                        <FinalIcon className="w-4 h-4 text-bg/70 hover:text-bg transition-colors" />
+                                      </div>
+                                      <input 
+                                        value={block.title}
+                                        onChange={e => updateBlockTitle(blockId, e.target.value)}
+                                        className="text-sm tracking-widest uppercase bg-transparent outline-none border-b border-bg/20 focus:border-bg w-24 sm:w-32 text-center pb-0.5 text-bg font-medium"
+                                        placeholder="Name"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <FinalIcon className="w-4 h-4" />
+                                      <span className="text-sm tracking-widest uppercase">{block.title}</span>
+                                    </>
+                                  )}
+                                </div>
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setBlockToDelete(blockId);
                                   }}
-                                  className="w-6 h-6 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 bg-white/10 text-white hover:bg-white/20"
+                                  className="w-6 h-6 rounded-full flex items-center justify-center transition-all opacity-0 group-hover:opacity-100 bg-black/10 hover:bg-black/20 text-bg"
                                   title="Delete Section"
                                 >
                                   <LucideIcons.X className="w-3 h-3" />

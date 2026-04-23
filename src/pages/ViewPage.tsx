@@ -248,10 +248,10 @@ export default function ViewPage() {
                     let tags: string[] = [];
                     if (idx > -1) {
                       category = item.text.slice(0, idx).trim();
-                      tags = item.text.slice(idx + 1).split(',').map(s => s.trim()).filter(Boolean);
+                      tags = item.text.slice(idx + 1).split(/,\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
                     } else if (item.text.includes(',')) {
                       category = 'Skills';
-                      tags = item.text.split(',').map(s => s.trim()).filter(Boolean);
+                      tags = item.text.split(/,\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
                     } else {
                       tags = [item.text];
                       category = 'Expertise';
@@ -301,9 +301,9 @@ export default function ViewPage() {
         >
           {allTabs.map((blockId) => {
             const isInfo = blockId === 'info';
-            const block = isInfo ? { id: 'info', title: 'Info' } : data.blocks[blockId];
+            const block = isInfo ? { id: 'info', title: 'Info', type: 'info', items: [] } : data.blocks[blockId];
             if (!block) return null;
-            const Icon = ICONS[blockId] || LucideIcons.Briefcase;
+            const Icon = (block as any).icon ? (LucideIcons as any)[(block as any).icon] || LucideIcons.Briefcase : ICONS[blockId] || LucideIcons.Briefcase;
             const isActive = activeTab === blockId;
 
             return (
@@ -463,10 +463,10 @@ export default function ViewPage() {
                     
                     if (idx > -1) {
                       category = item.text.slice(0, idx).trim();
-                      tags = item.text.slice(idx + 1).split(',').map(s => s.trim()).filter(Boolean);
+                      tags = item.text.slice(idx + 1).split(/,\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
                     } else if (item.text.includes(',')) {
                       category = 'Skills';
-                      tags = item.text.split(',').map(s => s.trim()).filter(Boolean);
+                      tags = item.text.split(/,\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
                     } else {
                       tags = [item.text];
                       category = 'Expertise';

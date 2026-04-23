@@ -431,6 +431,16 @@ export function useResume() {
     }));
   };
 
+  const updateBlockIcon = (blockId: string, icon: string) => {
+    setData(prev => ({
+      ...prev,
+      blocks: {
+        ...prev.blocks,
+        [blockId]: { ...prev.blocks[blockId], icon }
+      }
+    }));
+  };
+
   const addListItem = (blockId: string) => {
     setData(prev => {
       const block = prev.blocks[blockId];
@@ -593,6 +603,7 @@ export function useResume() {
     reorderListItems,
     reorderTagItems,
     updateBlockTitle,
+    updateBlockIcon,
     addListItem,
     updateListItem,
     removeListItem,
