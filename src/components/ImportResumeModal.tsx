@@ -107,19 +107,22 @@ export const ImportResumeModal: React.FC<ImportResumeModalProps> = ({ isOpen, on
         // Step 2: Fallback to Frontend Parsing (For AI Studio Free Tier Proxy)
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         
-        const prompt = `You are an expert HR system.
-Extract the person's resume details from the provided document perfectly.
-Structure the text correctly and return ONLY the JSON matching the required schema.
-Ensure all names, titles, locations, emails, and summaries are accurate.
-If a section isn't found, leave the array empty or the string null. 
-Do not hallucinate data.
+        const prompt = `You are an expert ATS (Applicant Tracking System) data extractor.
+Extract the candidate's resume details from the provided document perfectly.
+You MUST extract ALL work experience and ALL education history. Do not skip any entries.
+
+CRITICAL INSTRUCTIONS FOR EXPERIENCE & EDUCATION:
+- "title": Job title or Degree name.
+- "subtitle": Company name or School name (include location if available).
+- "period": Date range (e.g., "Jul 2023 - Sep 2023" or "2021-2024").
+- "description": Combine all bullet points, responsibilities, and achievements into a single string. Use bullet points (•) and line breaks (\n) within the string to keep it formatted. DO NOT leave this empty if there are details.
 
 IMPORTANT FOR SKILLS: 
-Group related skills together intelligently into categories based on ecosystems or domains.
-Look for programming languages, frameworks, AI tools, etc., and group them logically.
+Group related skills together intelligently into categories based on domains.
 Format each skill entry STRICTLY as "Category: Skill1, Skill2, Skill3".
-For example: "Python: Django, Flask, OpenCV" or "Frontend: React, TypeScript, Tailwind".
-Do not just output single disconnected skills if they can be categorized.`;
+For example: "Data: Python, SQL, R" or "Languages: English, Mandarin". Include languages and certifications here as well if they fit.
+
+Return ONLY the JSON matching the required schema. Do not hallucinate data.`;
 
         const result = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
