@@ -41,7 +41,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         } catch (error: any) {
           console.error("Firebase auth check runtime error:", error);
           if (error.message && error.message.includes('offline')) {
-            console.error("Failed to get document because the client is offline. Please check your Firebase configuration or network.");
+            console.error(
+              "🔥🔥🔥 FIREBASE OFFLINE ERROR 🔥🔥🔥\n" +
+              "Login failed because Firestore is unreachable. Please ensure you have created a Firestore Database in your Firebase Console, or check your AdBlocker/Network."
+            );
           }
           setIsNewUser(false); // Default to false if we can't verify
         }

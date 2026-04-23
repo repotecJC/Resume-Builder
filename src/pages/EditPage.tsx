@@ -7,6 +7,7 @@ import { useResume } from '../hooks/useResume';
 import { ListItem, TagItem } from '../types';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { ImportResumeModal } from '../components/ImportResumeModal';
 
 const createImage = (url: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
@@ -80,6 +81,7 @@ export default function EditPage() {
     appState,
     switchProfile,
     createProfile,
+    importResumeProfile,
     renameProfile,
     deleteProfile,
     data, 
@@ -116,6 +118,7 @@ export default function EditPage() {
   const [direction, setDirection] = useState(0);
   const [newTags, setNewTags] = useState<Record<string, string>>({});
   const [copied, setCopied] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [blockToDelete, setBlockToDelete] = useState<string | null>(null);
   const [profileToDelete, setProfileToDelete] = useState<string | null>(null);
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null);
@@ -840,6 +843,12 @@ export default function EditPage() {
             >
               <LucideIcons.Download className="w-4 h-4" /> Export PDF
             </button>
+            <button
+              onClick={() => setIsImportModalOpen(true)}
+              className="glass px-6 py-3 rounded-full flex items-center justify-center gap-2 text-xs md:text-sm uppercase tracking-widest hover:bg-white/10 transition-colors text-indigo-400 hover:text-indigo-300 hover-glow whitespace-nowrap"
+            >
+              <LucideIcons.Wand2 className="w-4 h-4" /> Import Your Resume
+            </button>
             <Link
               to="/view"
               className="glass px-6 py-3 rounded-full flex items-center justify-center gap-2 text-xs md:text-sm uppercase tracking-widest hover:bg-white/10 transition-colors text-accent hover-glow whitespace-nowrap"
@@ -1178,6 +1187,18 @@ export default function EditPage() {
           </AnimatePresence>
         </main>
       </div>
+
+      <ImportResumeModal 
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+        onImport={(parsedData) => {
+          // This safely and atomically creates a new profile with the uploaded data
+          importResumeProfile(
+            parsedData.profile?.name ? `${parsedData.profile.name}'s Imported Resume` : 'Imported Resume', 
+            parsedData
+          );
+        }}
+      />
     </DragDropContext>
   );
 }

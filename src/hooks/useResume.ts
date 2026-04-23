@@ -152,6 +152,64 @@ export function useResume() {
     }
   };
 
+  const importResumeProfile = (name: string, parsedData: any) => {
+    const newId = `profile-${Date.now()}`;
+    const mainData = appState.profiles['main']?.data || DEFAULT_RESUME;
+    
+    // Create new data starting from mainData defaults but with imported content
+    const newData: ResumeData = {
+        ...mainData,
+        profile: {
+            ...mainData.profile,
+            ...(parsedData.profile || {}),
+            contactItems: [] // clear contacts as they aren't parsed by AI reliably yet
+        },
+        blocks: {},
+        blockOrder: []
+    };
+
+    if (parsedData.experience && parsedData.experience.length > 0) {
+        const bId = `exp-${Date.now()}`;
+        newData.blocks[bId] = {
+            id: bId,
+            type: 'list',
+            title: 'Experience',
+            items: parsedData.experience.map((i: any) => ({ ...i, id: Math.random().toString(36).substr(2, 9) }))
+        };
+        newData.blockOrder.push(bId);
+    }
+    
+    if (parsedData.education && parsedData.education.length > 0) {
+        const bId = `edu-${Date.now()}`;
+        newData.blocks[bId] = {
+            id: bId,
+            type: 'list',
+            title: 'Education',
+            items: parsedData.education.map((i: any) => ({ ...i, id: Math.random().toString(36).substr(2, 9) }))
+        };
+        newData.blockOrder.push(bId);
+    }
+    
+    if (parsedData.skills && parsedData.skills.length > 0) {
+        const bId = `skills-${Date.now()}`;
+        newData.blocks[bId] = {
+            id: bId,
+            type: 'tags',
+            title: 'Skills',
+            items: parsedData.skills.map((t: string) => ({ id: Math.random().toString(36).substr(2, 9), text: t }))
+        };
+        newData.blockOrder.push(bId);
+    }
+
+    setAppState(prev => ({
+        activeProfileId: newId,
+        profiles: {
+            ...prev.profiles,
+            [newId]: { id: newId, name, data: sanitizeObject(newData) }
+        }
+    }));
+  };
+
   const createProfile = (name: string) => {
     const mainData = appState.profiles['main'].data;
     const newId = `profile-${Date.now()}`;
@@ -443,6 +501,7 @@ export function useResume() {
     appState,
     switchProfile,
     createProfile,
+    importResumeProfile,
     renameProfile,
     deleteProfile,
     data,
