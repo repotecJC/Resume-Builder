@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import { auth, db } from '../lib/firebase';
-import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut as firebaseSignOut } from 'firebase/auth';
+import { onAuthStateChanged, User, signInWithPopup, GoogleAuthProvider, signOut as firebaseSignOut, browserPopupRedirectResolver } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 interface AuthContextType {
@@ -63,7 +63,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      await signInWithPopup(auth, provider);
+      // Explicitly pass browserPopupRedirectResolver to improve iframe storage partition compliance
+      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
       
       // Note: User state will be correctly updated by the onAuthStateChanged listener
     } catch (error: any) {
@@ -72,6 +73,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       } else if (error.code === 'auth/popup-blocked') {
         alert('Popup blocked by browser. Please allow popups for this site to sign in.');
+      } else if (error.code === 'auth/missing-initial-state' || (error.message && error.message.includes('missing initial state'))) {
+        alert('Storage partition blocked the sign back in inside the Preview iFrame.\n\nTo use a different Google account properly, please click the "Open in new tab" icon (top right ➚) and sign in directly there.');
       } else if (error.code === 'auth/too-many-requests') {
         alert('Too many sign-in attempts. Please try again later.');
       } else {
