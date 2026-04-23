@@ -156,13 +156,31 @@ export function useResume() {
     const newId = `profile-${Date.now()}`;
     const mainData = appState.profiles['main']?.data || DEFAULT_RESUME;
     
+    // Extract and format contact items
+    const rawContactItems = parsedData.contactItems || [];
+    const formattedContactItems = rawContactItems.map((item: any) => {
+      let finalUrl = item.url || '';
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      
+      // Auto-prefix email if missing
+      if (emailRegex.test(finalUrl.trim()) && !finalUrl.toLowerCase().startsWith('mailto:')) {
+        finalUrl = `mailto:${finalUrl.trim()}`;
+      }
+      
+      return {
+        ...item,
+        url: finalUrl,
+        id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36)
+      };
+    });
+
     // Create new data starting from mainData defaults but with imported content
     const newData: ResumeData = {
         ...mainData,
         profile: {
             ...mainData.profile,
             ...(parsedData.profile || {}),
-            contactItems: [] // clear contacts as they aren't parsed by AI reliably yet
+            contactItems: formattedContactItems 
         },
         blocks: {},
         blockOrder: []
@@ -272,15 +290,44 @@ export function useResume() {
   };
 
   const updateContactItem = (id: string, field: string, value: string) => {
-    setData(prev => ({
-      ...prev,
-      profile: {
-        ...prev.profile,
-        contactItems: prev.profile.contactItems?.map(item => 
-          item.id === id ? { ...item, [field]: value } : item
-        )
-      }
-    }));
+    setData(prev => {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+      return {
+        ...prev,
+        profile: {
+          ...prev.profile,
+          contactItems: prev.profile.contactItems?.map(item => {
+            if (item.id !== id) return item;
+
+            const updatedItem = { ...item, [field]: value };
+
+            // Handle typing in the URL field directly
+            if (field === 'url') {
+              if (emailRegex.test(value.trim()) && !value.toLowerCase().startsWith('mailto:')) {
+                updatedItem.url = `mailto:${value.trim()}`;
+              }
+            }
+
+            // Handle typing in the Text field
+            if (field === 'text') {
+              const currentUrl = (item.url || '').toLowerCase();
+              const oldAutoUrl = `mailto:${item.text.trim()}`.toLowerCase();
+              
+              // If it's a valid email, auto-fill the URL if it's currently empty, 
+              // or if the URL was previously auto-filled by the old text.
+              if (emailRegex.test(value.trim())) {
+                if (!currentUrl || currentUrl === oldAutoUrl) {
+                  updatedItem.url = `mailto:${value.trim()}`;
+                }
+              }
+            }
+
+            return updatedItem;
+          })
+        }
+      };
+    });
   };
 
   const removeContactItem = (id: string) => {

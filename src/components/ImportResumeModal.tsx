@@ -122,6 +122,12 @@ Group related skills together intelligently into categories based on domains.
 Format each skill entry STRICTLY as "Category: Skill1, Skill2, Skill3".
 For example: "Data: Python, SQL, R" or "Languages: English, Mandarin". Include languages and certifications here as well if they fit.
 
+IMPORTANT FOR CONTACT ITEMS:
+Extract all URLs, websites, LinkedIn, GitHub, emails, and phone numbers into "contactItems".
+For emails, MUST set url to "mailto:example@domain.com". 
+For phones, MUST set url to "tel:+123456789".
+For links, MUST include "https://".
+
 Return ONLY the JSON matching the required schema. Do not hallucinate data.`;
 
         const result = await ai.models.generateContent({
@@ -150,6 +156,17 @@ Return ONLY the JSON matching the required schema. Do not hallucinate data.`;
                     summary: { type: Type.STRING },
                   },
                   required: ["name"],
+                },
+                contactItems: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      icon: { type: Type.STRING, description: "One of: Mail, Phone, Globe, Linkedin, Github, Twitter" },
+                      text: { type: Type.STRING, description: "Display text, e.g., email address, phone number, or handle" },
+                      url: { type: Type.STRING, description: "The actual URL or mailto:/tel: link. If it's an email, prefix with mailto:. If it's a phone, prefix with tel:" }
+                    }
+                  }
                 },
                 experience: {
                   type: Type.ARRAY,
