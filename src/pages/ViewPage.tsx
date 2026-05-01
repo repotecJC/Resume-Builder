@@ -55,10 +55,39 @@ export default function ViewPage() {
   }, [idFromUrl, liveIdFromUrl]);
 
   const [syncData, setSyncData] = useState<ResumeData | null>(null);
-  const data = syncData || remoteData || defaultData;
+  const [printTimeout, setPrintTimeout] = useState(false);
+  
+  // If it's a print preview without an explicit ID, we rely entirely on syncData from the editor opener
+  // We should not use defaultData otherwise it prints the placeholder layout.
+  const isSyncPrintWait = isPrint && !idFromUrl && !liveIdFromUrl && !syncData && !printTimeout;
+  const data = syncData || remoteData || (!isPrint || printTimeout ? defaultData : null);
+
+  useEffect(() => {
+    if (isPrint && !idFromUrl && !liveIdFromUrl && !syncData) {
+      const timer = setTimeout(() => setPrintTimeout(true), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [isPrint, idFromUrl, liveIdFromUrl, syncData]);
 
   // Real-time data sync for printing/previewing latest unsaved local data
   useEffect(() => {
+    // Check localStorage as primary reliable data source in bounded cross-window scopes
+    if (isPrint) {
+      const localPrintDataStr = localStorage.getItem('RESUME_PRINT_DATA');
+      if (localPrintDataStr) {
+        try {
+          const parsed = JSON.parse(localPrintDataStr);
+          setSyncData(parsed);
+        } catch (e) {
+          console.error('Failed to parse print data from localStorage', e);
+        }
+      }
+
+      if (window.opener) {
+        window.opener.postMessage({ type: 'RESUME_DATA_REQUEST' }, '*');
+      }
+    }
+
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'RESUME_DATA_SYNC') {
         setSyncData(event.data.data);
@@ -70,13 +99,13 @@ export default function ViewPage() {
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [isPrint]);
 
   const [activeTab, setActiveTab] = useState('info');
   const [direction, setDirection] = useState(0);
   const tabsContainerRef = useRef<HTMLDivElement>(null);
 
-  const allTabs = ['info', ...data.blockOrder];
+  const allTabs = data ? ['info', ...data.blockOrder] : ['info'];
 
   useEffect(() => {
     if (tabsContainerRef.current) {
@@ -91,7 +120,7 @@ export default function ViewPage() {
     if (!allTabs.includes(activeTab)) {
       setActiveTab('info');
     }
-  }, [data.blockOrder, activeTab]);
+  }, [data?.blockOrder, activeTab]);
 
   const handleTabClick = (tabId: string) => {
     const currentIndex = allTabs.indexOf(activeTab);
@@ -115,29 +144,83 @@ export default function ViewPage() {
     })
   };
 
-  const activeBlock = data.blocks[activeTab];
+  const activeBlock = data?.blocks?.[activeTab];
 
-  const [imagesLoaded, setImagesLoaded] = useState(!data?.profile?.photo);
+  const printContainerRef = useRef<HTMLDivElement>(null);
+  const printContentRef = useRef<HTMLDivElement>(null);
+  const [printScale, setPrintScale] = useState(1);
+  const [imagesLoaded, setImagesLoaded] = useState(false);
+
+  useEffect(() => {
+    if (data && !data.profile?.photo) {
+      setImagesLoaded(true);
+    }
+  }, [data?.profile?.photo]);
 
   useEffect(() => {
     if (isPrint && !loading && !error && data) {
-      if (!data.profile.photo) {
+      if (!data.profile?.photo) {
         setImagesLoaded(true);
       }
       if (imagesLoaded) {
-        const timer = setTimeout(() => window.print(), 800);
+        if (data.profile?.name) {
+          document.title = `PresenceCV_${data.profile.name}`;
+        }
+        
+        let finalScale = 1;
+        const targetWidth = 650; // 794 - 144 (72px padding * 2)
+        const targetHeight = 979; // 1123 - 144
+        
+        if (printContentRef.current) {
+          const el = printContentRef.current;
+          
+          let minScale = 0.4;
+          let maxScale = 1.6;
+          let bestScale = 1.0;
+
+          for (let i = 0; i < 12; i++) {
+            const midScale = (minScale + maxScale) / 2;
+            const testWidth = targetWidth / midScale;
+            
+            el.style.transform = 'none';
+            el.style.width = `${testWidth}px`;
+            
+            const height = el.scrollHeight;
+            const scaledHeight = height * midScale;
+            
+            if (scaledHeight > targetHeight) {
+              maxScale = midScale;
+            } else {
+              bestScale = midScale;
+              minScale = midScale;
+            }
+          }
+          
+          finalScale = bestScale * 0.99; // tiny safety margin
+          // Clean up inline styles so React can apply state
+          el.style.transform = '';
+          el.style.width = '';
+        }
+        
+        setPrintScale(finalScale);
+
+        const timer = setTimeout(() => {
+          window.print();
+        }, 800);
         return () => clearTimeout(timer);
       }
     }
-  }, [isPrint, loading, error, imagesLoaded, data]);
+  }, [isPrint, loading, error, imagesLoaded, data, syncData]);
 
-  if (loading) {
+  if (loading || isSyncPrintWait) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#0a0a0a] text-white overflow-hidden">
          <div className="depth-bg animated" />
          <div className="flex flex-col items-center gap-4 relative z-10">
            <span className="w-12 h-12 rounded-full border-4 border-white/10 border-t-white animate-spin mb-4" />
-           <p className="text-xl tracking-widest uppercase font-light text-text-secondary">Loading Profile...</p>
+           <p className="text-xl tracking-widest uppercase font-light text-text-secondary">
+             {isSyncPrintWait ? 'Preparing Document...' : 'Loading Profile...'}
+           </p>
          </div>
       </div>
     );
@@ -161,14 +244,22 @@ export default function ViewPage() {
 
   if (isPrint && data) {
     return (
-      <div className="bg-white min-h-screen text-black print:p-0 p-8 max-w-[1000px] mx-auto font-sans print-page-container print-scale-text" style={{ '--theme-accent': data.themeColor } as CSSProperties}>
-        <div className="print-page w-full flex flex-col mb-16">
+      <div 
+        ref={printContainerRef}
+        className="bg-white text-black font-sans print-page-container relative shadow-2xl" 
+        style={{ '--theme-accent': data.themeColor } as CSSProperties}
+      >
+        <div
+          ref={printContentRef}
+          style={{ width: `${650 / printScale}px`, transform: printScale !== 1 ? `scale(${printScale})` : 'none', transformOrigin: 'top left' }}
+        >
+          <div className="print-page w-full flex flex-col mb-16">
           {/* For print layout, we enforce flex-row universally to prevent stacking on narrow print viewports */}
           <div className={`flex flex-row w-full gap-8 ${
             data.profile.photo ? (data.profile.photoPosition === 'right' ? 'flex-row-reverse' : '') : ''
           }`}>
             {data.profile.photo && (
-              <div className="w-48 h-48 rounded-full overflow-hidden shrink-0 border-4 print-photo" style={{ borderColor: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>
+              <div className="w-48 h-48 rounded-full overflow-hidden shrink-0 border-4" style={{ borderColor: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>
                 <img 
                   src={data.profile.photo} 
                   alt="Profile" 
@@ -229,7 +320,7 @@ export default function ViewPage() {
                         <h3 className="font-serif text-xl font-bold text-gray-900">{item.title}</h3>
                         <span className="text-sm tracking-widest uppercase text-gray-500">{item.period}</span>
                       </div>
-                      <div className="text-sm tracking-widest uppercase text-gray-500 mb-2">
+                      <div className="text-sm tracking-widest text-gray-500 mb-2">
                         {item.subtitle}
                       </div>
                       <p className="text-gray-700 leading-relaxed whitespace-pre-wrap text-sm">
@@ -243,26 +334,28 @@ export default function ViewPage() {
               {block.type === 'tags' && (
                 <div className="grid grid-cols-2 md:grid-cols-3 print:grid-cols-3 gap-6">
                   {block.items.map((item: TagItem) => {
-                    const idx = item.text.indexOf(':');
+                    let idx = item.text.indexOf(':');
+                    if (idx === -1) idx = item.text.indexOf('：'); // Handle Chinese colon
+
                     let category = item.text;
                     let tags: string[] = [];
                     if (idx > -1) {
                       category = item.text.slice(0, idx).trim();
-                      tags = item.text.slice(idx + 1).split(/,\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
-                    } else if (item.text.includes(',')) {
+                      tags = item.text.slice(idx + 1).split(/[,，、]\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
+                    } else if (item.text.match(/[,，、]/)) {
                       category = 'Skills';
-                      tags = item.text.split(/,\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
+                      tags = item.text.split(/[,，、]\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
                     } else {
                       tags = [item.text];
                       category = 'Expertise';
                     }
 
                     return (
-                      <div key={item.id} className="p-4 border rounded-xl bg-gray-50" style={{ borderColor: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>
-                        <h4 className="text-sm font-bold tracking-widest uppercase mb-3 text-gray-900">{category}</h4>
+                      <div key={item.id} className="p-4 border rounded-xl bg-gray-50 flex flex-col" style={{ borderColor: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>
+                        <h4 className="text-sm font-bold tracking-widest mb-3 text-gray-900">{category.toUpperCase()}</h4>
                         <div className="flex flex-wrap gap-2">
                           {tags.map((t, i) => (
-                            <span key={i} className="px-3 py-1 bg-white border rounded-lg text-xs text-gray-600 block uppercase tracking-wide">
+                            <span key={i} className="px-3 py-1 bg-white border rounded-lg text-xs text-gray-600 block">
                               {t}
                             </span>
                           ))}
@@ -275,6 +368,7 @@ export default function ViewPage() {
             </div>
           );
         })}
+        </div>
       </div>
     );
   }
@@ -442,7 +536,7 @@ export default function ViewPage() {
                       <div className="absolute left-[-4px] top-2.5 w-2 h-2 rounded-full bg-accent hover-glow" />
                       <div className="group">
                         <h3 className="font-serif text-3xl mb-2 group-hover:text-accent transition-colors hover-glow cursor-default">{item.title}</h3>
-                        <div className="text-xs tracking-widest uppercase text-text-secondary mb-4 hover-glow-text cursor-default">
+                        <div className="text-xs tracking-widest text-text-secondary mb-4 hover-glow-text cursor-default">
                           <span className="text-white/80">{item.subtitle}</span> • {item.period}
                         </div>
                         <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap hover-glow-text cursor-default">
@@ -457,16 +551,18 @@ export default function ViewPage() {
               {activeBlock.type === 'tags' && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6 w-[100vw] max-w-[1400px] relative left-1/2 -translate-x-1/2 px-6 md:px-12">
                   {activeBlock.items.map((item: TagItem) => {
-                    const idx = item.text.indexOf(':');
+                    let idx = item.text.indexOf(':');
+                    if (idx === -1) idx = item.text.indexOf('：');
+
                     let category = item.text;
                     let tags: string[] = [];
                     
                     if (idx > -1) {
                       category = item.text.slice(0, idx).trim();
-                      tags = item.text.slice(idx + 1).split(/,\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
-                    } else if (item.text.includes(',')) {
+                      tags = item.text.slice(idx + 1).split(/[,，、]\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
+                    } else if (item.text.match(/[,，、]/)) {
                       category = 'Skills';
-                      tags = item.text.split(/,\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
+                      tags = item.text.split(/[,，、]\s*(?![^()]*\))/).map(s => s?.trim()).filter(Boolean);
                     } else {
                       tags = [item.text];
                       category = 'Expertise';
@@ -479,13 +575,13 @@ export default function ViewPage() {
                       >
                         <div className="flex items-center gap-3 border-b border-white/10 pb-4">
                            <div className="w-1.5 h-1.5 rounded-full bg-accent hover-glow" />
-                           <h4 className="text-sm xl:text-base tracking-widest uppercase text-white font-medium">{category}</h4>
+                           <h4 className="text-sm xl:text-base tracking-widest text-white font-medium">{category.toUpperCase()}</h4>
                         </div>
                         <div className="flex flex-wrap xl:flex-col gap-2 xl:gap-4 mt-2">
                           {tags.map((t, i) => (
                             <span 
                               key={i} 
-                              className="px-4 py-2 xl:px-0 xl:py-1 xl:bg-transparent bg-white/5 rounded-lg xl:rounded-none text-xs xl:text-sm text-text-secondary xl:border-none border border-white/5 hover:text-accent hover:bg-white/10 xl:hover:bg-transparent xl:hover:translate-x-2 transition-all uppercase tracking-wide flex items-center w-auto xl:w-full"
+                              className="px-4 py-2 xl:px-0 xl:py-1 xl:bg-transparent bg-white/5 rounded-lg xl:rounded-none text-xs xl:text-sm text-text-secondary xl:border-none border border-white/5 hover:text-accent hover:bg-white/10 xl:hover:bg-transparent xl:hover:translate-x-2 transition-all flex items-center w-auto xl:w-full"
                             >
                               <span className="hidden xl:inline-block w-1 h-1 bg-white/20 rounded-full mr-3.5 flex-shrink-0" />
                               {t}

@@ -96,7 +96,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Clear all local resume states to prevent data leakage between sessions
     localStorage.removeItem('elegant_resume_app_data');
     localStorage.removeItem('elegant_resume_data');
-    window.location.href = '/'; // Force reload to clear all React state
   };
 
   const value = useMemo(() => ({

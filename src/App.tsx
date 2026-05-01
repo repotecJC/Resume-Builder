@@ -9,6 +9,8 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import LandingPage from './pages/LandingPage';
 import EditPage from './pages/EditPage';
 import ViewPage from './pages/ViewPage';
+import PrivacyPage from './pages/PrivacyPage';
+import TermsPage from './pages/TermsPage';
 import { isConfigValid } from './lib/firebase';
 import FirebaseSetupGuide from './components/FirebaseSetupGuide';
 
@@ -23,6 +25,8 @@ export default function App() {
         <Routes>
           { /* Public Landing Page */ }
           <Route path="/" element={<LandingPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           
           { /* Public Viewers (existing logic relies on queries like /view?id=...) */ }
           <Route path="/view" element={<ViewPage />} />

@@ -5,9 +5,10 @@ import * as LucideIcons from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import { useResume } from '../hooks/useResume';
 import { ListItem, TagItem } from '../types';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { ImportResumeModal } from '../components/ImportResumeModal';
+import ViewPage from './ViewPage';
 
 const createImage = (url: string): Promise<HTMLImageElement> =>
   new Promise((resolve, reject) => {
@@ -77,6 +78,7 @@ const AVAILABLE_ICONS = ['MapPin', 'Mail', 'Phone', 'Link', 'Github', 'Linkedin'
 const AVAILABLE_BLOCK_ICONS = ['Briefcase', 'GraduationCap', 'Code', 'Globe', 'User', 'Award', 'Layout', 'Star', 'Folder', 'File', 'Book', 'Heart', 'Coffee', 'Cpu'];
 
 export default function EditPage() {
+  const navigate = useNavigate();
   const { user, signOut, isNewUser } = useAuth();
   const { 
     appState,
@@ -182,14 +184,27 @@ export default function EditPage() {
   const [isSharing, setIsSharing] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
+  // Respond to data requests from spawned print windows (e.g. if they are refreshed)
+  useEffect(() => {
+    const handleRequest = (event: MessageEvent) => {
+      if (event.data?.type === 'RESUME_DATA_REQUEST' && event.source) {
+        event.source.postMessage({ type: 'RESUME_DATA_SYNC', data }, '*');
+      }
+    };
+    window.addEventListener('message', handleRequest);
+    return () => window.removeEventListener('message', handleRequest);
+  }, [data]);
+
   const handleExportPDF = () => {
+    // Rely on localStorage for cross-tab communication in restricted sandboxes
+    localStorage.setItem('RESUME_PRINT_DATA', JSON.stringify(data));
     const printWindow = window.open('/view?print=true', '_blank');
     if (!printWindow) {
       alert("Please allow popups to generate the PDF.");
       return;
     }
     
-    // Continuously send the current data to the new window until acknowledged
+    // Continuously send the current data to the new window until acknowledged (fallback)
     const intervalId = setInterval(() => {
       printWindow.postMessage({ type: 'RESUME_DATA_SYNC', data }, '*');
     }, 200);
@@ -633,11 +648,11 @@ export default function EditPage() {
                    </div>
                  )}
                  <button
-                   onClick={signOut}
-                   className="text-white hover:text-red-400 transition-colors p-2"
-                   title="Log Out"
+                   onClick={() => navigate('/')}
+                   className="text-white hover:text-[#f4f4f4] transition-colors p-2"
+                   title="Home"
                  >
-                   <LucideIcons.LogOut className="w-4 h-4" />
+                   <LucideIcons.Home className="w-4 h-4" />
                  </button>
               </div>
             )}
