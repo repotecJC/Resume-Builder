@@ -169,21 +169,27 @@ export default function ViewPage() {
         
         let finalScale = 1;
         const targetWidth = 650; // 794 - 144 (72px padding * 2)
-        const targetHeight = 979; // 1123 - 144
+        const targetHeight = 978; // 1122 - 144
         
         if (printContentRef.current) {
           const el = printContentRef.current;
           
-          let minScale = 0.4;
+          // Use more aggressive scale limits and more iterations for precision
+          let minScale = 0.25; 
           let maxScale = 1.6;
           let bestScale = 1.0;
 
-          for (let i = 0; i < 12; i++) {
+          // Force the element to behave as a desktop view even if calculating on mobile
+          const originalWidth = el.style.width;
+          const originalTransform = el.style.transform;
+
+          for (let i = 0; i < 15; i++) {
             const midScale = (minScale + maxScale) / 2;
             const testWidth = targetWidth / midScale;
             
             el.style.transform = 'none';
             el.style.width = `${testWidth}px`;
+            el.style.display = 'block'; // Ensure block for height calculation
             
             const height = el.scrollHeight;
             const scaledHeight = height * midScale;
@@ -196,10 +202,9 @@ export default function ViewPage() {
             }
           }
           
-          finalScale = bestScale * 0.99; // tiny safety margin
-          // Clean up inline styles so React can apply state
-          el.style.transform = '';
-          el.style.width = '';
+          finalScale = bestScale * 0.98; // Larger safety margin (2%)
+          el.style.transform = originalTransform;
+          el.style.width = originalWidth;
         }
         
         setPrintScale(finalScale);
@@ -249,13 +254,15 @@ export default function ViewPage() {
         className="bg-white text-black font-sans print-page-container relative shadow-2xl" 
         style={{ '--theme-accent': data.themeColor } as CSSProperties}
       >
-        <div
-          ref={printContentRef}
-          style={{ width: `${650 / printScale}px`, transform: printScale !== 1 ? `scale(${printScale})` : 'none', transformOrigin: 'top left' }}
-        >
-          <div className="print-page w-full flex flex-col mb-16">
-          {/* For print layout, we enforce flex-row universally to prevent stacking on narrow print viewports */}
-          <div className={`flex flex-row w-full gap-8 ${
+        <div className="print-page-padding">
+          <div
+            ref={printContentRef}
+            className="absolute top-[72px] left-[72px]"
+            style={{ width: `${650 / printScale}px`, transform: printScale !== 1 ? `scale(${printScale})` : 'none', transformOrigin: 'top left' }}
+          >
+            <div className="w-full flex flex-col mb-12">
+            {/* For print layout, we enforce flex-row universally to prevent stacking on narrow print viewports */}
+            <div className={`flex flex-row w-full gap-8 ${
             data.profile.photo ? (data.profile.photoPosition === 'right' ? 'flex-row-reverse' : '') : ''
           }`}>
             {data.profile.photo && (
@@ -307,7 +314,7 @@ export default function ViewPage() {
           const block = data.blocks[blockId];
           if (!block) return null;
           return (
-            <div key={block.id} className="print-page w-full mb-16">
+            <div key={block.id} className="w-full mb-12">
               <h2 className="text-2xl font-serif mb-8 border-b-2 pb-2 uppercase tracking-wider" style={{ borderColor: 'color-mix(in srgb, var(--theme-accent) 60%, black)', color: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }}>
                 {block.title}
               </h2>
@@ -316,16 +323,20 @@ export default function ViewPage() {
                 <div className="space-y-8">
                   {block.items.map((item: ListItem) => (
                     <div key={item.id} className="flex flex-col gap-1">
-                      <div className="flex justify-between items-baseline form-row">
+                      <div className="flex justify-between items-baseline">
                         <h3 className="font-serif text-xl font-bold text-gray-900">{item.title}</h3>
-                        <span className="text-sm tracking-widest uppercase text-gray-500">{item.period}</span>
+                        <span className="text-sm tracking-widest uppercase text-gray-500 whitespace-nowrap ml-4">{item.period}</span>
                       </div>
-                      <div className="text-sm tracking-widest text-gray-500 mb-2">
-                        {item.subtitle}
-                      </div>
-                      <p className="text-gray-700 leading-relaxed whitespace-pre-wrap text-sm">
-                        {item.description}
-                      </p>
+                      {item.subtitle && (
+                        <div className="text-sm tracking-widest text-gray-500 mb-2">
+                          {item.subtitle}
+                        </div>
+                      )}
+                      {item.description && (
+                        <p className="text-gray-700 leading-relaxed whitespace-pre-wrap text-sm">
+                          {item.description}
+                        </p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -368,6 +379,7 @@ export default function ViewPage() {
             </div>
           );
         })}
+        </div>
         </div>
       </div>
     );
@@ -537,11 +549,15 @@ export default function ViewPage() {
                       <div className="group">
                         <h3 className="font-serif text-3xl mb-2 group-hover:text-accent transition-colors hover-glow cursor-default">{item.title}</h3>
                         <div className="text-xs tracking-widest text-text-secondary mb-4 hover-glow-text cursor-default">
-                          <span className="text-white/80">{item.subtitle}</span> • {item.period}
+                          {item.subtitle && <span className="text-white/80">{item.subtitle}</span>} 
+                          {item.subtitle && item.period && " • "} 
+                          {item.period}
                         </div>
-                        <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap hover-glow-text cursor-default">
-                          {item.description}
-                        </p>
+                        {item.description && (
+                          <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap hover-glow-text cursor-default">
+                            {item.description}
+                          </p>
+                        )}
                       </div>
                     </div>
                   ))}

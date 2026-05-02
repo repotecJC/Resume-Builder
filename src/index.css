@@ -95,29 +95,87 @@
     margin: 0;
     size: A4 portrait;
   }
-  body, html {
+  body, html, #root {
     margin: 0 !important;
     padding: 0 !important;
     background: white !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    width: 794px !important;
-    height: 1123px !important;
   }
+  .no-print {
+    display: none !important;
+  }
+}
+
+body:has(.print-page-container) {
+  background-color: #525659 !important;
+  padding: 40px 0;
+  min-height: 100vh;
 }
 
 /* Force the container to exact A4 size both on screen (for accurate scale calc) and print */
 .print-page-container {
   width: 794px !important;
-  height: 1123px !important;
+  height: 1122px !important;
   max-width: 794px !important;
   margin: 0 auto !important; /* Centered on screen preview */
-  padding: 72px !important; /* 1.9cm margins inside the A4 */
   box-sizing: border-box !important;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow: hidden !important; /* Strictly clip to single page */
   position: relative;
   background-color: white; /* Ensure it is white on dark screens */
+  page-break-after: avoid !important;
+  page-break-inside: avoid !important;
+}
+
+@media screen {
+  body:has(.print-page-container) {
+    background-color: #525659 !important;
+    padding: 4vh 0;
+    min-height: 100vh;
+    display: block;
+    overflow-y: auto;
+  }
+
+  @media (min-width: 1000px) and (min-height: 900px) {
+    .print-page-container {
+      transform: scale(1.1);
+      transform-origin: top center;
+      margin: 0 auto calc(1122px * 0.1) !important;
+    }
+  }
+
+  @media (min-width: 1200px) and (min-height: 1100px) {
+    .print-page-container {
+      transform: scale(1.3);
+      transform-origin: top center;
+      margin: 0 auto calc(1122px * 0.3) !important;
+    }
+  }
+  
+  @media (min-width: 1400px) and (min-height: 1300px) {
+    .print-page-container {
+      transform: scale(1.5);
+      transform-origin: top center;
+      margin: 0 auto calc(1122px * 0.5) !important;
+    }
+  }
+
+  @media (min-width: 1600px) and (min-height: 1600px) {
+    .print-page-container {
+      transform: scale(1.7);
+      transform-origin: top center;
+      margin: 0 auto calc(1122px * 0.7) !important;
+    }
+  }
+}
+
+.print-page-padding {
+  padding: 72px;
+  width: 100%;
+  height: 100%;
+  position: relative;
+  box-sizing: border-box;
 }
 
