@@ -295,7 +295,13 @@ export default function ViewPage() {
                   return (
                     <div key={item.id} className="flex items-center gap-2">
                       <Icon className="w-4 h-4" style={{ color: 'color-mix(in srgb, var(--theme-accent) 60%, black)' }} />
-                      <span className="text-sm font-['Georgia']">{item.text}</span>
+                      {item.url ? (
+                        <a href={item.url} target="_blank" rel="noopener noreferrer" className="text-sm font-['Georgia']" style={{ color: 'inherit', textDecoration: 'none' }}>
+                          {item.text}
+                        </a>
+                      ) : (
+                        <span className="text-sm font-['Georgia']">{item.text}</span>
+                      )}
                     </div>
                   );
                 })}
